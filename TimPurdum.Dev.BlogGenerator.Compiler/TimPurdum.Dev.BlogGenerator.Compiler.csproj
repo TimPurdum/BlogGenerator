@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\markdig\src\Markdig\Markdig.csproj" />
+    <ProjectReference Include="..\TimPurdum.Dev.BlogGenerator.Shared\TimPurdum.Dev.BlogGenerator.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Razor.Language" Version="6.0.36" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0-1.25259.101" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0-rc.1.25451.107" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net462" Version="1.0.3">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="System.ServiceModel.Syndication" Version="10.0.0-rc.1.25451.107" />
+  </ItemGroup>
+
+    <Target Name="SetEnvironmentVariables" BeforeTargets="GenerateBlog">
+        <Message Text="Setting Environment Variables..." Importance="high" />
+        <SetEnvironmentVariable Value="$(Configuration)" Name="Configuration" />
+        <SetEnvironmentVariable Value="$(TargetFramework)" Name="TargetFramework" />
+        <SetEnvironmentVariable Value="$(MSBuildThisFileDirectory)" Name="ProjectDirectory" />
+        <SetEnvironmentVariable Value="$(OutDir)" Name="OutputDirectory" />
+    </Target>
+
+</Project>

@@ -1,0 +1,53 @@
+<DynamicComponent Type="ComponentType" Parameters="_parameters" />
+
+@code {
+    [Parameter]
+    public required Type ComponentType { get; set; }
+    
+    [Parameter]
+    public required MarkupString Title { get; set; }
+
+    [Parameter] 
+    public string? SiteTitle { get; set; }
+    
+    [Parameter] 
+    public MarkupString? SiteDescription { get; set; }
+    
+    [Parameter]
+    public string? Url { get; set; }
+    
+    [Parameter]
+    public string? SiteName { get; set; }
+    
+    [Parameter]
+    public MarkupString? HeaderLinks { get; set; }
+    
+    [Parameter]
+    public List<LinkData>? NavLinks { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        _parameters = new Dictionary<string, object?>
+        {
+            { nameof(Title), Title },
+            { nameof(SiteTitle), SiteTitle }, 
+            { nameof(SiteDescription), SiteDescription },
+            { nameof(Url), Url },
+            { nameof(SiteName), SiteName },
+            { nameof(HeaderLinks), HeaderLinks },
+            { nameof(NavLinks), NavLinks }
+        };
+        
+        PropertyInfo[] properties = ComponentType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        
+        foreach (KeyValuePair<string, object?> parameter in _parameters.ToList())
+        {
+            if (!properties.Any(p => p.Name.Equals(parameter.Key, StringComparison.OrdinalIgnoreCase)))
+            {
+                _parameters.Remove(parameter.Key);
+            }
+        }
+    }
+
+    private Dictionary<string, object?>? _parameters;
+}

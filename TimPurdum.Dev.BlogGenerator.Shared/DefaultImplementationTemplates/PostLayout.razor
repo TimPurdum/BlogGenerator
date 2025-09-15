@@ -1,0 +1,28 @@
+@inherits BasePostLayout
+
+<Header NavLinks="NavLinks"></Header>
+<main class="page-content" aria-label="content">
+    <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+            <header class="post-header">
+                <h1 class="post-title p-name" itemprop="name headline">@Title</h1>
+                @if (SubTitle is not null)
+                {
+                    <h2 class="post-subtitle" itemprop="name subtitle">@SubTitle</h2>
+                }
+                @if (PublishedDate is not null)
+                {
+                    <p class="post-meta">
+                        <time class="dt-published" 
+                              datetime="@PublishedDate.Value.ToString("yyyy-MM-ddTHH:mm:ssZ")" 
+                              itemprop="datePublished">@PublishedDate.Value.ToString("MMM dd, yyyy")</time>
+                    </p>
+                }
+            </header>
+            <div class="post-content e-content" itemprop="articleBody">
+                @Content
+            </div>
+        </article>
+    </div>
+</main>
+<Footer></Footer>

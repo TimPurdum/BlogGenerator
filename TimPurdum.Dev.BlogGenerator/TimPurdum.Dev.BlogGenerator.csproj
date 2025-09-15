@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <GeneratePackageOnBuild Condition="'$(Configuration)' == 'RELEASE'">true</GeneratePackageOnBuild>
+        <Title>Blazor Blog Generator</Title>
+        <Description>A "mostly" static site blog generator for Blazor WebAssembly blogs.</Description>
+        <PackageTags>Blazor;Blog;Static Site Generator;WebAssembly</PackageTags>
+        <PackageVersion>1.0.0</PackageVersion>
+        <Version>1.0.0</Version>
+        <Authors>Tim Purdum</Authors>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/TimPurdum/timpurdum.github.io/tree/main/TimPurdum.Dev.BlogCreator</RepositoryUrl>
+        <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <SupportedPlatform Include="browser"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.0-rc.1.25451.107" />
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0-rc.1.25451.107" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\TimPurdum.Dev.BlogGenerator.Compiler\TimPurdum.Dev.BlogGenerator.Compiler.csproj"
+        PrivateAssets="All">
+          <IncludeAssets>TimPurdum.Dev.BlogGenerator.Compiler.dll</IncludeAssets>
+      </ProjectReference>
+      <ProjectReference Include="..\TimPurdum.Dev.BlogGenerator.Shared\TimPurdum.Dev.BlogGenerator.Shared.csproj">
+          <IncludeAssets>TimPurdum.Dev.BlogGenerator.Shared.dll</IncludeAssets>
+          <IncludeAssets>all</IncludeAssets>
+      </ProjectReference>
+      <ProjectReference Include="..\markdig\src\Markdig\Markdig.csproj" PrivateAssets="All">
+          <IncludeAssets>Markdig.dll</IncludeAssets>
+      </ProjectReference>
+    </ItemGroup>
+
+    <Target DependsOnTargets="BuildOnlySettings;ResolveReferences" Name="CopyProjectReferencesToPackage">
+        <ItemGroup>
+            <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+        </ItemGroup>
+    </Target>
+
+    <Target Name="Generate Blog" BeforeTargets="Build">
+        <Message Text="Generating Blog Code..." Importance="high" />
+        <Exec Command="dotnet run --no-build --project TimPurdum.Dev.BlogGenerator.Compiler.csproj /p:Configuration=$(Configuration) /p:TargetFramework=$(TargetFramework)"
+              StandardOutputImportance="high"
+              StandardErrorImportance="high"
+              ConsoleToMsBuild="true"
+              ContinueOnError="false"
+              WorkingDirectory="$(MSBuildThisFileDirectory)..\TimPurdum.Dev.BlogGenerator.Compiler" />
+    </Target>
+
+</Project>

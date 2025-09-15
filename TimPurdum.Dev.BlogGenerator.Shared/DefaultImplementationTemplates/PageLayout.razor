@@ -1,0 +1,20 @@
+﻿@inherits BasePageLayout
+
+<Header NavLinks="NavLinks"></Header>
+<main class="page-content" aria-label="content">
+    <div class="wrapper">
+        <article class="page">
+            <header class="page-heading">
+                <h1 class="page-title p-name" itemprop="name headline">@Title</h1>
+                @if (SubTitle is not null)
+                {
+                    <h2 class="page-subtitle" itemprop="name subtitle">@SubTitle</h2>
+                }
+            </header>
+            <div class="page-content e-content" itemprop="articleBody">
+                @Content
+            </div>
+        </article>
+    </div>
+</main>
+<Footer></Footer>
