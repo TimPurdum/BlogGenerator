@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <Target Name="Generate Blog" BeforeTargets="Build">
+        <Message Text="Generating Blog Code..." Importance="high" />
+        <Exec Command="dotnet run TimPurdum.Dev.BlogGenerator.Compiler.dll /p:Configuration=$(Configuration) /p:TargetFramework=$(TargetFramework)"
+              StandardOutputImportance="high"
+              StandardErrorImportance="high"
+              ConsoleToMsBuild="true"
+              ContinueOnError="false"
+              WorkingDirectory="$(MSBuildThisFileDirectory)" />
+    </Target>
+</Project>

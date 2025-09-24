@@ -14,6 +14,9 @@
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <RepositoryUrl>https://github.com/TimPurdum/timpurdum.github.io/tree/main/TimPurdum.Dev.BlogCreator</RepositoryUrl>
         <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+        <PackageReadmeFile>ReadMe.md</PackageReadmeFile>
+        <AssemblyName>TimPurdum.Dev.BlogGenerator</AssemblyName>
+        <RootNamespace>TimPurdum.Dev.BlogGenerator</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
@@ -29,6 +32,7 @@
       <ProjectReference Include="..\TimPurdum.Dev.BlogGenerator.Compiler\TimPurdum.Dev.BlogGenerator.Compiler.csproj"
         PrivateAssets="All">
           <IncludeAssets>TimPurdum.Dev.BlogGenerator.Compiler.dll</IncludeAssets>
+          <ExcludeAssets>all</ExcludeAssets>
       </ProjectReference>
       <ProjectReference Include="..\TimPurdum.Dev.BlogGenerator.Shared\TimPurdum.Dev.BlogGenerator.Shared.csproj">
           <IncludeAssets>TimPurdum.Dev.BlogGenerator.Shared.dll</IncludeAssets>
@@ -39,20 +43,16 @@
       </ProjectReference>
     </ItemGroup>
 
+    <ItemGroup>
+      <None Include="TimPurdum.Dev.BlogGenerator.targets" Pack="true" PackagePath="build\$(AssemblyName)\" >
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+        <None Include="ReadMe.md" Pack="true" PackagePath="" />
+    </ItemGroup>
+
     <Target DependsOnTargets="BuildOnlySettings;ResolveReferences" Name="CopyProjectReferencesToPackage">
         <ItemGroup>
             <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
         </ItemGroup>
     </Target>
-
-    <Target Name="Generate Blog" BeforeTargets="Build">
-        <Message Text="Generating Blog Code..." Importance="high" />
-        <Exec Command="dotnet run --no-build --project TimPurdum.Dev.BlogGenerator.Compiler.csproj /p:Configuration=$(Configuration) /p:TargetFramework=$(TargetFramework)"
-              StandardOutputImportance="high"
-              StandardErrorImportance="high"
-              ConsoleToMsBuild="true"
-              ContinueOnError="false"
-              WorkingDirectory="$(MSBuildThisFileDirectory)..\TimPurdum.Dev.BlogGenerator.Compiler" />
-    </Target>
-
 </Project>

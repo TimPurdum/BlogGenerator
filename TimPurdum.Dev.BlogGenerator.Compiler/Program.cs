@@ -44,7 +44,6 @@ if (blogProjectFolderPath is null)
 
 Console.WriteLine($"Found Blazor WebAssembly project at: {blogProjectFolderPath}");
 
-
 IServiceCollection services = new ServiceCollection();
 services.AddLogging();
 string appSettingsPath = Path.Combine(blogProjectFolderPath, "wwwroot", "appsettings.json");
@@ -64,15 +63,23 @@ IServiceProvider serviceProvider = services.BuildServiceProvider();
 #pragma warning restore ASP0000
 
 BlogSettings blogSettings = serviceProvider.GetRequiredService<BlogSettings>();
-blogSettings.OutputWebRootPath = Path.Combine(blogProjectFolderPath, blogSettings.OutputWebRootPath);
-blogSettings.OutputComponentsPath = Path.Combine(blogProjectFolderPath, blogSettings.OutputComponentsPath);
-blogSettings.PagesContentPath = Path.Combine(blogProjectFolderPath, blogSettings.PagesContentPath);
-blogSettings.PostsContentPath = Path.Combine(blogProjectFolderPath, blogSettings.PostsContentPath);
-blogSettings.SourceTemplatesPath = Path.Combine(blogProjectFolderPath, blogSettings.SourceTemplatesPath);
+blogSettings.OutputWebRootPath = Path.GetFullPath(
+    Path.Combine(blogProjectFolderPath, blogSettings.OutputWebRootPath));
+blogSettings.OutputComponentsPath = Path.GetFullPath(
+    Path.Combine(blogProjectFolderPath, blogSettings.OutputComponentsPath));
+string sourceProjectFolderPath = Path.GetDirectoryName(
+    Path.GetFullPath(Path.Combine(blogProjectFolderPath, blogSettings.SourceProject)))!;
+blogSettings.PagesContentPath = Path.GetFullPath(
+    Path.Combine(sourceProjectFolderPath, blogSettings.PagesContentPath));
+blogSettings.PostsContentPath = Path.GetFullPath(
+    Path.Combine(sourceProjectFolderPath, blogSettings.PostsContentPath));
+blogSettings.SourceTemplatesPath = Path.GetFullPath(
+    Path.Combine(sourceProjectFolderPath, blogSettings.SourceTemplatesPath));
 blogSettings.BlogRootPath = blogProjectFolderPath;
-string relativeOutputPath = 
-    Path.GetRelativePath(configuration["ProjectDirectory"]!, configuration["OutputDirectory"]!);
-blogSettings.AssemblyOutputPath = Path.Combine(blogProjectFolderPath, relativeOutputPath, $"{blogProjectName!}.dll");
+string currentAssemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+string relativeOutputPath = currentAssemblyPath.Substring(currentAssemblyPath.IndexOf("bin", StringComparison.Ordinal));
+string sourceProjectName = Path.GetFileNameWithoutExtension(blogSettings.SourceProject);
+blogSettings.SourceAssemblyOutputPath = Path.Combine(sourceProjectFolderPath, relativeOutputPath, $"{sourceProjectName}.dll");
 Directory.CreateDirectory(blogSettings.OutputWebRootPath);
 Directory.CreateDirectory(blogSettings.OutputComponentsPath);
 

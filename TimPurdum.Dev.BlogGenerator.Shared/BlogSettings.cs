@@ -8,11 +8,12 @@ public class BlogSettings
     public string AssemblyNamespace { get; init; } = "My.Blazor.Blog";
     public string SiteDescription { get; init; } = "A blog about software development and technology.";
     public string[] HeaderLinks { get; init; } = [];
+    public string SourceProject { get; set; } = "../Source/Source.csproj";
     public string PostsContentPath { get; set; } = "Source/Content/Posts";
     public string PagesContentPath { get; set; } = "Source/Content/Pages";
     public string OutputWebRootPath { get; set; } = "wwwroot";
     public string OutputComponentsPath { get; set; } = "Components";
     public string SourceTemplatesPath { get; set; } = "Source/Templates";
     public string? BlogRootPath { get; set; }
-    public string? AssemblyOutputPath { get; set; }
+    public string? SourceAssemblyOutputPath { get; set; }
 }

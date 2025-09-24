@@ -30,7 +30,7 @@ public static class Generator
 
         var pages = await MarkupParser.GeneratePageMetaDatas(navLinks);
 
-        Type rootTemplateType = Assembly.Load(BlogSettings.AssemblyOutputPath!).GetTypes()
+        Type rootTemplateType = Assembly.LoadFile(BlogSettings.SourceAssemblyOutputPath!).GetTypes()
                    .FirstOrDefault(t => t.IsSubclassOf(typeof(BaseRootTemplate)))
                ?? typeof(RootTemplate);
 
