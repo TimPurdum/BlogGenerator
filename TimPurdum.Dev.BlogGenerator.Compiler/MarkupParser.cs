@@ -332,6 +332,11 @@ public static class MarkupParser
             ? pageTitleMatch.Groups["title"].Value.Trim() 
             : fileName.PascalToTitleCase();
         
+        if (title == "@BlogSettings.SiteTitle")
+        {
+            title = Generator.BlogSettings!.SiteTitle;
+        }
+        
         List<string> razorLines = content.Split(Environment.NewLine).ToList();
         List<string> resultLines = [];
         bool inRazorComponentCodeBlock = false;
@@ -460,7 +465,7 @@ public static class MarkupParser
 
         string htmlContent = await Generator.RenderComponent(parameters);
         
-        return new PageMetaData(fileName, string.Empty, urlPath, htmlContent, 
+        return new PageMetaData(title, string.Empty, urlPath, htmlContent, 
             razorComponentSections, scripts, "PageLayout", string.Empty, 0);
     }
 
