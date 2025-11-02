@@ -15,11 +15,23 @@ public static class MarkupParser
         List<PostMetaData> postMetaDatas = [];
         foreach (string post in posts)
         {
-            string fileName = Path.GetFileNameWithoutExtension(post);
+            PostMetaData? postMetaData = GeneratePostMetaData(post);
+            if (postMetaData is not null)
+            {
+                postMetaDatas.Add(postMetaData);
+            }
+        }
+
+        return postMetaDatas;
+    }
+
+    private static PostMetaData? GeneratePostMetaData(string post)
+    {
+        string fileName = Path.GetFileNameWithoutExtension(post);
             if (Resources.PostNameRegex.Match(fileName) is not { Success: true } match)
             {
                 Console.WriteLine($"Skipping post {fileName} due to invalid name format.");
-                continue; // Skip posts with invalid names
+                return null; // Skip posts with invalid names
             }
             fileName = match.Groups["fileName"].Value;
             DateTime publishedDate = new DateTime(
@@ -30,49 +42,80 @@ public static class MarkupParser
 
             try
             {
-                // Parse the content and generate PostMetaData
-                PostMetaData postMetaData = GeneratePostMetaData(fileName, content, publishedDate);
-                postMetaDatas.Add(postMetaData);
+                DateTime fileLastModified = File.GetLastWriteTimeUtc(post);
+                // Extract YAML front-matter using regex
+                Match yamlMatch = Resources.FileRegex.Match(content);
+                if (!yamlMatch.Success) throw new ArgumentException("Content does not contain valid YAML front-matter.");
+
+                string yaml = yamlMatch.Groups[1].Value;
+                string markdownContent = yamlMatch.Groups[2].Value;
+                Dictionary<string, string> yamlData = GetYamlData(yaml);
+                DateTime? lastModified = yamlData.ContainsKey("lastmodified")
+                    ? DateTime.Parse(yamlData["lastmodified"].Trim('"'))
+                    : null;
+                if (lastModified.HasValue && lastModified.Value > fileLastModified)
+                {
+                    fileLastModified = lastModified.Value;
+                }
+                
+                string outputFolder = Path.Combine(
+                    Generator.BlogSettings!.OutputWebRootPath,
+                    "post",
+                    publishedDate.Year.ToString(),
+                    publishedDate.Month.ToString(),
+                    publishedDate.Day.ToString());
+                Directory.CreateDirectory(outputFolder);
+                string outFilePath = Path.Combine(outputFolder, $"{fileName}.html");
+                DateTime outFileLastModified = File.Exists(outFilePath)
+                    ? File.GetLastWriteTimeUtc(outFilePath)
+                    : DateTime.MinValue;
+
+                // if the output file is newer than both the content file and the last modified date, skip processing
+                bool update = !(outFileLastModified >= fileLastModified && outFileLastModified >= publishedDate);
+                
+                List<string> markdownLines = markdownContent.Split(Environment.NewLine).ToList();
+                List<string> resultLines = [];
+                Dictionary<string, string> razorComponentSections = [];
+                List<string> scripts = [];
+        
+                string postContent = ParseMarkdownLines(markdownLines, ref resultLines, 
+                    ref razorComponentSections, ref scripts);
+
+                string urlPath = $"/post/{publishedDate.Year}/{publishedDate.Month}/{publishedDate.Day}/{fileName}";
+
+                string title = yamlData.GetValueOrDefault("title", "Untitled").Trim('"');
+                string subTitle = yamlData.GetValueOrDefault("subtitle", string.Empty).Trim('"');
+                string authorName = yamlData.GetValueOrDefault("author", string.Empty).Trim('"');
+                string layout = yamlData.GetValueOrDefault("layout", "post").Trim('"');
+                layout = $"{layout.ToUpperFirstChar()}Layout";
+                string description = yamlData.GetValueOrDefault("description", string.Empty).Trim('"');
+
+                if (update)
+                {
+                    // add or update the lastmodified in the yaml data
+                    yamlData["lastmodified"] = $"\"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}\"";
+                
+                    // rewrite the yaml front-matter with the updated lastmodified date
+                    StringBuilder newYamlBuilder = new StringBuilder();
+                    newYamlBuilder.AppendLine("---");
+                    foreach (var kvp in yamlData)
+                    {
+                        newYamlBuilder.AppendLine($"{kvp.Key}: {kvp.Value}");
+                    }
+                    newYamlBuilder.AppendLine("---");
+                    newYamlBuilder.AppendLine(string.Join(Environment.NewLine, markdownLines));
+                    File.WriteAllText(post, newYamlBuilder.ToString());
+                }
+
+                return new PostMetaData(title, subTitle, urlPath, publishedDate, authorName, postContent, 
+                    razorComponentSections, scripts, layout, description, outFilePath, update);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error generating Razor content for post {fileName}: {ex.Message}");
             }
-        }
 
-        return postMetaDatas;
-    }
-
-    private static PostMetaData GeneratePostMetaData(string fileName, string content, DateTime publishedDate)
-    {
-        // Extract YAML front-matter using regex
-        Match match = Resources.FileRegex.Match(content);
-        if (!match.Success) throw new ArgumentException("Content does not contain valid YAML front-matter.");
-
-        string yaml = match.Groups[1].Value;
-        string markdownContent = match.Groups[2].Value;
-        List<string> markdownLines = markdownContent.Split(Environment.NewLine).ToList();
-        List<string> resultLines = [];
-        Dictionary<string, string> razorComponentSections = [];
-        List<string> scripts = [];
-        
-        string postContent = ParseMarkdownLines(ref markdownLines, ref resultLines, 
-            ref razorComponentSections, ref scripts);
-
-        Dictionary<string, string> yamlData = GetYamlData(yaml);
-
-        string urlPath = $"/post/{publishedDate.Year}/{publishedDate.Month}/{publishedDate.Day}/{fileName}";
-
-        string title = yamlData.GetValueOrDefault("title", "Untitled").Trim('"');
-        string subTitle = yamlData.GetValueOrDefault("subtitle", string.Empty).Trim('"');
-        string authorName = yamlData.GetValueOrDefault("author", string.Empty).Trim('"');
-        string layout = yamlData.GetValueOrDefault("layout", "post").Trim('"');
-        layout = $"{layout.ToUpperFirstChar()}Layout";
-        string description = yamlData.GetValueOrDefault("description", string.Empty).Trim('"');
-
-        return new PostMetaData(title, subTitle, urlPath, publishedDate, authorName, postContent, 
-            razorComponentSections, scripts, layout, 
-            description);
+            return null;
     }
 
     public static async Task<List<PageMetaData>> GeneratePageMetaDatas(List<LinkData> navLinks)
@@ -122,7 +165,7 @@ public static class MarkupParser
         Dictionary<string, string> razorComponentSections = [];
         List<string> scripts = [];
         
-        string postContent = ParseMarkdownLines(ref markdownLines, ref resultLines, 
+        string postContent = ParseMarkdownLines(markdownLines, ref resultLines, 
             ref razorComponentSections, ref scripts);
 
         Dictionary<string, string> yamlData = GetYamlData(yaml);
@@ -140,7 +183,7 @@ public static class MarkupParser
             razorComponentSections, scripts, layout, description, navOrder);
     }
     
-    private static string ParseMarkdownLines(ref List<string> markdownLines,
+    private static string ParseMarkdownLines(List<string> markdownLines,
         ref List<string> resultLines,
         ref Dictionary<string, string> razorComponentSections, 
         ref List<string> scripts)

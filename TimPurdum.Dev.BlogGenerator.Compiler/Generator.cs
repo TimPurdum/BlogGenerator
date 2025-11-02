@@ -25,8 +25,10 @@ public static class Generator
         List<LinkData> navLinks = [];
 
         foreach (var post in posts)
+        {
             navLinks.Add(new LinkData(post.Title, post.SubTitle, post.Url,
                 post.PublishedDate, post.Author));
+        }
 
         var pages = await MarkupParser.GeneratePageMetaDatas(navLinks);
 
@@ -48,18 +50,13 @@ public static class Generator
 
         foreach (var post in posts)
         {
+            if (!post.Update)
+            {
+                continue;
+            }
+            
             var html = await RenderPost(post, renderer, navLinks, rootTemplateType);
-            var outputFolder = Path.Combine(
-                BlogSettings.OutputWebRootPath,
-                "post",
-                post.PublishedDate.Year.ToString(),
-                post.PublishedDate.Month.ToString(),
-                post.PublishedDate.Day.ToString());
-            Directory.CreateDirectory(outputFolder);
-            var fileName = Path.GetFileNameWithoutExtension(post.Url);
-            var filePath = Path.Combine(outputFolder, $"{fileName}.html");
-            await File.WriteAllTextAsync(filePath, html);
-
+            await File.WriteAllTextAsync(post.OutputPath, html);
             await CreateRazorComponents(post.RazorComponents);
         }
 
