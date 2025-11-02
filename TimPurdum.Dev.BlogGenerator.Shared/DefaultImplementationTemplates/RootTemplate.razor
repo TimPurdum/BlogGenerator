@@ -3,26 +3,26 @@
 <html lang="en">
 
     <head>
-        <meta charset="utf-8"/>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>@Title</title>
-        <meta name="generator" content="TimPurdum.Dev Blazor Site Generator"/>
-        <meta property="og:title" content="@Title"/>
-        <meta property="og:locale" content="en_US"/>
-        <meta name="description" content="@Description"/>
-        <meta property="og:description" content="@Description"/>
-        <link rel="canonical" href="@Url"/>
-        <meta property="og:url" content="@Url"/>
-        <meta property="og:site_name" content="@SiteName"/>
-        <meta property="og:type" content="website"/>
-        <base href="/"/>
-        <link rel="stylesheet" href="css/app.css"/>
-        <link href="@($"{SiteName}.styles.css")" rel="stylesheet"/>
+        <meta name="generator" content="TimPurdum.Dev Blazor Site Generator" />
+        <meta property="og:title" content="@Title" />
+        <meta property="og:locale" content="en_US" />
+        <meta name="description" content="@Description" />
+        <meta property="og:description" content="@Description" />
+        <link rel="canonical" href="@Url" />
+        <meta property="og:url" content="@Url" />
+        <meta property="og:site_name" content="@SiteName" />
+        <meta property="og:type" content="website" />
+        <base href="/" />
+        <link rel="stylesheet" href="css/app.css" />
+        <link href="@($"{SiteName}.styles.css")" rel="stylesheet" />
         @HeaderLinks
     </head>
 
     <body>
-        <DynamicComponent Type="LayoutType" Parameters="Parameters"/>
+        <DynamicComponent Type="LayoutType" Parameters="Parameters" />
         <script src="_framework/blazor.webassembly.js"></script>
         @foreach (var script in Scripts ?? [])
         {

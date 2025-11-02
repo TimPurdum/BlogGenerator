@@ -53,102 +53,11 @@ public static class MarkupParser
         string markdownContent = match.Groups[2].Value;
         List<string> markdownLines = markdownContent.Split(Environment.NewLine).ToList();
         List<string> resultLines = [];
-        bool inSampleCodeBlock = false;
-        bool inRazorComponentCodeBlock = false;
-        int razorCodeBlockIndex = 1;
-        string? razorCodeBlockCurrentKey = null;
-        StringBuilder? razorCodeBlockContent = null;
         Dictionary<string, string> razorComponentSections = [];
         List<string> scripts = [];
-        StringBuilder? currentScriptBuilder = null;
-        bool inScriptBlock = false;
         
-        foreach (var line in markdownLines)
-        {
-            if (inSampleCodeBlock)
-            {
-                if (line.StartsWith("```") || line.StartsWith("~~~"))
-                {
-                    inSampleCodeBlock = false; // End of code block
-                    if (inRazorComponentCodeBlock)
-                    {
-                        if (string.IsNullOrWhiteSpace(razorCodeBlockCurrentKey))
-                        {
-                            inRazorComponentCodeBlock = false;
-                            continue;
-                        }
-                        // Store the code block content for the Razor component
-                        razorComponentSections[razorCodeBlockCurrentKey] = razorCodeBlockContent!.ToString();
-                        razorCodeBlockContent.Clear();
-                        resultLines.Add(GenerateLoadingDiv(razorCodeBlockCurrentKey));
-                        razorCodeBlockCurrentKey = string.Empty;
-                        continue;
-                    }
-                }
-
-                if (inRazorComponentCodeBlock)
-                {
-                    // Collect the content of the Razor component code block
-                    razorCodeBlockContent!.AppendLine(line);
-                    continue;
-                }
-            }
-            else if (line.StartsWith("```") || line.StartsWith("~~~"))
-            {
-                inSampleCodeBlock = true; // Start of code block
-                if (line.Length > 3 && line.Substring(3).StartsWith("blazor-component"))
-                {
-                    // This is a Blazor component code block
-                    inRazorComponentCodeBlock = true;
-                    razorCodeBlockCurrentKey = line.Length > 19 && line.Split(' ').Length > 1
-                        ? $"{line.Split(' ')[1]}{razorCodeBlockIndex++}"
-                        : $"code-block{razorCodeBlockIndex++}";
-                    razorCodeBlockContent = new StringBuilder();
-                    continue;
-                }
-            }
-            else if (inScriptBlock)
-            {
-                if (ScriptEndRegex.Match(line) is { Success: true })
-                {
-                    // This is the end of a script block
-                    inScriptBlock = false;
-                    currentScriptBuilder!.AppendLine(line);
-                    scripts.Add(currentScriptBuilder.ToString());
-                    currentScriptBuilder = null;
-                }
-                else
-                {
-                    // Continue collecting lines for the script block
-                    currentScriptBuilder!.AppendLine(line);
-                }
-
-                continue;
-            }
-            else if (ScriptStartRegex.Match(line) is { Success: true } scriptStartMatch)
-            {
-                if (!scriptStartMatch.Groups["scriptEnd"].Success)
-                {
-                    inScriptBlock = true;
-                    currentScriptBuilder = new StringBuilder(line);
-                    // This script block continues, so we will collect lines until we find the end
-                }
-                else
-                {
-                    // This script block ends immediately, so we can process it right away
-                    scripts.Add(line);
-                    inScriptBlock = false;
-                }
-                
-                continue;
-            }
-            
-            // Collect the content of the sample code block
-            resultLines.Add(line);
-        }
-
-        MarkdownDocument document = MarkdownParser.Parse(string.Join(Environment.NewLine, resultLines), Resources.Pipeline);
-        string postContent = document.ToRazor();
+        string postContent = ParseMarkdownLines(ref markdownLines, ref resultLines, 
+            ref razorComponentSections, ref scripts);
 
         Dictionary<string, string> yamlData = GetYamlData(yaml);
 
@@ -162,7 +71,8 @@ public static class MarkupParser
         string description = yamlData.GetValueOrDefault("description", string.Empty).Trim('"');
 
         return new PostMetaData(title, subTitle, urlPath, publishedDate, authorName, postContent, 
-            razorComponentSections, scripts, layout, description);
+            razorComponentSections, scripts, layout, 
+            description);
     }
 
     public static async Task<List<PageMetaData>> GeneratePageMetaDatas(List<LinkData> navLinks)
@@ -209,13 +119,41 @@ public static class MarkupParser
         string markdownContent = match.Groups[2].Value;
         List<string> markdownLines = markdownContent.Split(Environment.NewLine).ToList();
         List<string> resultLines = [];
+        Dictionary<string, string> razorComponentSections = [];
+        List<string> scripts = [];
+        
+        string postContent = ParseMarkdownLines(ref markdownLines, ref resultLines, 
+            ref razorComponentSections, ref scripts);
+
+        Dictionary<string, string> yamlData = GetYamlData(yaml);
+        string urlPath = fileName == "index" ? "/" : fileName;
+
+        string title = yamlData.GetValueOrDefault("title", "Untitled").Trim('"');
+        string navOrderString = yamlData.GetValueOrDefault("navorder", "0").Trim('"');
+        int navOrder = int.TryParse(navOrderString, out var order) ? order : 0;
+        string subTitle = yamlData.GetValueOrDefault("subtitle", string.Empty).Trim('"');
+        string layout = yamlData.GetValueOrDefault("layout", "page").Trim('"');
+        layout = $"{layout.ToUpperFirstChar()}Layout";
+        string description = yamlData.GetValueOrDefault("description", string.Empty).Trim('"');
+        
+        return new PageMetaData(title, subTitle, urlPath, postContent, 
+            razorComponentSections, scripts, layout, description, navOrder);
+    }
+    
+    private static string ParseMarkdownLines(ref List<string> markdownLines,
+        ref List<string> resultLines,
+        ref Dictionary<string, string> razorComponentSections, 
+        ref List<string> scripts)
+    {
         bool inSampleCodeBlock = false;
         bool inRazorComponentCodeBlock = false;
         int razorCodeBlockIndex = 1;
         string? razorCodeBlockCurrentKey = null;
         StringBuilder? razorCodeBlockContent = null;
-        Dictionary<string, string> razorComponentSections = [];
-        List<string> scripts = [];
+        int codeBlockIndex = 1;
+        string? currentCodeBlockLanguage = null;
+        string? codeBlockCurrentKey = null;
+        StringBuilder? codeBlockContent = null;
         StringBuilder? currentScriptBuilder = null;
         bool inScriptBlock = false;
         
@@ -228,13 +166,30 @@ public static class MarkupParser
                     inSampleCodeBlock = false; // End of code block
                     if (inRazorComponentCodeBlock)
                     {
+                        inRazorComponentCodeBlock = false;
+                        if (string.IsNullOrWhiteSpace(razorCodeBlockCurrentKey))
+                        {
+                            continue;
+                        }
                         // Store the code block content for the Razor component
-                        razorComponentSections[razorCodeBlockCurrentKey!] = razorCodeBlockContent!.ToString();
+                        razorComponentSections[razorCodeBlockCurrentKey] = razorCodeBlockContent!.ToString();
                         razorCodeBlockContent.Clear();
-                        resultLines.Add(GenerateLoadingDiv(razorCodeBlockCurrentKey!));
+                        resultLines.Add(GenerateLoadingDiv(razorCodeBlockCurrentKey));
                         razorCodeBlockCurrentKey = string.Empty;
                         continue;
                     }
+                    
+                    if (string.IsNullOrEmpty(codeBlockCurrentKey))
+                    {
+                        continue;
+                    }
+                    // Store the code block content for regular code blocks
+                    resultLines.Add($"<div id=\"{codeBlockCurrentKey}\" class=\"monaco-editor-block\"></div>");
+                    scripts.Add(GenerateMonacoScript(codeBlockCurrentKey, codeBlockContent!.ToString(), currentCodeBlockLanguage!));
+                    codeBlockContent.Clear();
+                    codeBlockCurrentKey = string.Empty;
+                    currentCodeBlockLanguage = null;
+                    continue;
                 }
 
                 if (inRazorComponentCodeBlock)
@@ -243,8 +198,13 @@ public static class MarkupParser
                     razorCodeBlockContent!.AppendLine(line);
                     continue;
                 }
+                
+                // Collect the content of the regular code block
+                codeBlockContent!.AppendLine(line);
+                continue;
             }
-            else if (line.StartsWith("```") || line.StartsWith("~~~"))
+
+            if (line.StartsWith("```") || line.StartsWith("~~~"))
             {
                 inSampleCodeBlock = true; // Start of code block
                 if (line.Length > 3 && line.Substring(3).StartsWith("blazor-component"))
@@ -257,8 +217,14 @@ public static class MarkupParser
                     razorCodeBlockContent = new StringBuilder();
                     continue;
                 }
+                // This is a regular code block
+                codeBlockCurrentKey = $"code-block{codeBlockIndex++}";
+                currentCodeBlockLanguage = line.Length > 3 ? line.Substring(3) : "plaintext";
+                codeBlockContent = new StringBuilder();
+                continue;
             }
-            else if (inScriptBlock)
+
+            if (inScriptBlock)
             {
                 if (ScriptEndRegex.Match(line) is { Success: true })
                 {
@@ -276,7 +242,8 @@ public static class MarkupParser
 
                 continue;
             }
-            else if (ScriptStartRegex.Match(line) is { Success: true } scriptStartMatch)
+
+            if (ScriptStartRegex.Match(line) is { Success: true } scriptStartMatch)
             {
                 if (!scriptStartMatch.Groups["scriptEnd"].Success)
                 {
@@ -293,27 +260,13 @@ public static class MarkupParser
                 
                 continue;
             }
-            
+
             // Collect the content of the sample code block
             resultLines.Add(line);
         }
 
         MarkdownDocument document = MarkdownParser.Parse(string.Join(Environment.NewLine, resultLines), Resources.Pipeline);
-        string postContent = document.ToRazor();
-
-        Dictionary<string, string> yamlData = GetYamlData(yaml);
-        string urlPath = fileName == "index" ? "/" : fileName;
-
-        string title = yamlData.GetValueOrDefault("title", "Untitled").Trim('"');
-        string navOrderString = yamlData.GetValueOrDefault("navorder", "0").Trim('"');
-        int navOrder = int.TryParse(navOrderString, out var order) ? order : 0;
-        string subTitle = yamlData.GetValueOrDefault("subtitle", string.Empty).Trim('"');
-        string layout = yamlData.GetValueOrDefault("layout", "page").Trim('"');
-        layout = $"{layout.ToUpperFirstChar()}Layout";
-        string description = yamlData.GetValueOrDefault("description", string.Empty).Trim('"');
-        
-        return new PageMetaData(title, subTitle, urlPath, postContent, razorComponentSections, scripts, layout, 
-            description, navOrder);
+        return document.ToRazor();
     }
     
     private static async Task<PageMetaData> GeneratePageMetaDataFromRazorComponent(string fileName, string content,
@@ -409,6 +362,7 @@ public static class MarkupParser
                     // This is the end of a script block
                     inScriptBlock = false;
                     currentScriptBuilder!.AppendLine(line);
+                    currentScriptBuilder.AppendLine();
                     scripts.Add(currentScriptBuilder.ToString());
                     currentScriptBuilder = null;
                 }
@@ -466,7 +420,8 @@ public static class MarkupParser
         string htmlContent = await Generator.RenderComponent(parameters);
         
         return new PageMetaData(title, string.Empty, urlPath, htmlContent, 
-            razorComponentSections, scripts, "PageLayout", string.Empty, 0);
+            razorComponentSections, scripts, "PageLayout", 
+            string.Empty, 0);
     }
 
     private static Dictionary<string, string> GetYamlData(string yaml)
@@ -500,6 +455,23 @@ public static class MarkupParser
                 </div>
 
                 """;
+    }
+    
+    private static string GenerateMonacoScript(string codeBlockKey, string codeBlockContent, string language)
+    {
+        return $$"""
+                 
+                 <script>
+                    require(['vs/editor/editor.main'], function () {
+                 	    var editor = monaco.editor.create(document.getElementById('{{codeBlockKey}}'), {
+                 		    value: `{{codeBlockContent.Replace("`", "\\`")}}`,
+                 	        automaticLayout: true,
+                 		    language: '{{language}}'
+                 	    });
+                 	});
+                 </script>
+                 
+                 """;
     }
     
     private static readonly Regex PagePathRegex = new(@"^@page ""(?<path>.+?)""",

@@ -43,7 +43,7 @@ public static class Generator
             var filePath = Path.Combine(BlogSettings.OutputWebRootPath, $"{fileName}.html");
             await File.WriteAllTextAsync(filePath, html);
 
-            await CreateComponents(page.RazorComponents);
+            await CreateRazorComponents(page.RazorComponents);
         }
 
         foreach (var post in posts)
@@ -60,7 +60,7 @@ public static class Generator
             var filePath = Path.Combine(outputFolder, $"{fileName}.html");
             await File.WriteAllTextAsync(filePath, html);
 
-            await CreateComponents(post.RazorComponents);
+            await CreateRazorComponents(post.RazorComponents);
         }
 
         // Generate the RSS feed
@@ -137,7 +137,7 @@ public static class Generator
         });
     }
 
-    private static async Task CreateComponents(Dictionary<string, string> components)
+    private static async Task CreateRazorComponents(Dictionary<string, string> components)
     {
         foreach (var kvp in components)
         {
@@ -145,7 +145,7 @@ public static class Generator
             // add Preserve method to prevent trimming of components
             var componentContent = kvp.Value;
 
-            if (CodeBlockRegex.Match(componentContent) is { Success: true } match)
+            if (RazorComponentCodeBlockRegex.Match(componentContent) is { Success: true } match)
             {
                 componentContent = componentContent.Replace(match.Value, $$"""
                                       @code
@@ -180,5 +180,5 @@ public static class Generator
         }
     }
     
-    private static readonly Regex CodeBlockRegex = new(@"@code\s*\{(?<content>[^}]*)\}", RegexOptions.Compiled);
+    private static readonly Regex RazorComponentCodeBlockRegex = new(@"@code\s*\{(?<content>[^}]*)\}", RegexOptions.Compiled);
 }
