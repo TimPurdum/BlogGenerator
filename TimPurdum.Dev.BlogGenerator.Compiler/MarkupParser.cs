@@ -227,8 +227,9 @@ public static class MarkupParser
                         continue;
                     }
                     // Store the code block content for regular code blocks
-                    resultLines.Add($"<div id=\"{codeBlockCurrentKey}\" class=\"monaco-editor-block\"></div>");
-                    scripts.Add(GenerateMonacoScript(codeBlockCurrentKey, codeBlockContent!.ToString(), currentCodeBlockLanguage!));
+                    int lineCount = codeBlockContent!.ToString().Split(Environment.NewLine).Length;
+                    resultLines.Add($"<div id=\"{codeBlockCurrentKey}\" class=\"monaco-editor-block\" style=\"height: {lineCount + 2}rem;\"></div>");
+                    scripts.Add(GenerateMonacoScript(codeBlockCurrentKey, codeBlockContent.ToString(), currentCodeBlockLanguage!));
                     codeBlockContent.Clear();
                     codeBlockCurrentKey = string.Empty;
                     currentCodeBlockLanguage = null;

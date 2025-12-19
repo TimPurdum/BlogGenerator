@@ -142,31 +142,15 @@ public static class Generator
             // add Preserve method to prevent trimming of components
             var componentContent = kvp.Value;
 
-            if (RazorComponentCodeBlockRegex.Match(componentContent) is { Success: true } match)
-            {
-                componentContent = componentContent.Replace(match.Value, $$"""
-                                      @code
-                                      {
-                                          [System.Diagnostics.CodeAnalysis.DynamicDependency(
-                                              System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({{componentName}}))]
-                                          private static void Preserve() { }
-                                          
-                                          {{match.Groups["content"].Value}}
-                                      }
-                                      """);
-            }
-            else
-            {
-                componentContent += $$"""
+            componentContent += $$"""
 
-                                      @code
-                                      {
-                                          [System.Diagnostics.CodeAnalysis.DynamicDependency(
-                                              System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({{componentName}}))]
-                                          private static void Preserve() { }
-                                      }
-                                      """;
-            }
+                                  @code
+                                  {
+                                      [System.Diagnostics.CodeAnalysis.DynamicDependency(
+                                          System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({{componentName}}))]
+                                      private static void Preserve() { }
+                                  }
+                                  """;
 
             // Write the component content to a file
             var componentFilePath = Path.Combine(BlogSettings!.OutputComponentsPath,
@@ -176,6 +160,4 @@ public static class Generator
             Console.WriteLine($"Created Razor component: {componentFilePath}");
         }
     }
-    
-    private static readonly Regex RazorComponentCodeBlockRegex = new(@"@code\s*\{(?<content>[^}]*)\}", RegexOptions.Compiled);
 }
