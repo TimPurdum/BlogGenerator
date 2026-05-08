@@ -49,10 +49,8 @@ public static class MarkupParser
 
                 string yaml = yamlMatch.Groups[1].Value;
                 string markdownContent = yamlMatch.Groups[2].Value;
-                Dictionary<string, string> yamlData = GetYamlData(yaml);
-                DateTime? lastModified = yamlData.ContainsKey("lastmodified")
-                    ? DateTime.Parse(yamlData["lastmodified"].Trim('"'))
-                    : null;
+                FrontMatter frontMatter = FrontMatter.Parse(yaml);
+                DateTime? lastModified = frontMatter.GetDateTime("lastmodified");
                 if (lastModified.HasValue && lastModified.Value > fileLastModified)
                 {
                     fileLastModified = lastModified.Value;
@@ -83,25 +81,22 @@ public static class MarkupParser
 
                 string urlPath = $"/post/{publishedDate.Year}/{publishedDate.Month}/{publishedDate.Day}/{fileName}";
 
-                string title = yamlData.GetValueOrDefault("title", "Untitled").Trim('"');
-                string subTitle = yamlData.GetValueOrDefault("subtitle", string.Empty).Trim('"');
-                string authorName = yamlData.GetValueOrDefault("author", string.Empty).Trim('"');
-                string layout = yamlData.GetValueOrDefault("layout", "post").Trim('"');
+                string title = frontMatter.GetString("title", "Untitled");
+                string subTitle = frontMatter.GetString("subtitle");
+                string authorName = frontMatter.GetString("author");
+                string layout = frontMatter.GetString("layout", "post");
                 layout = $"{layout.ToUpperFirstChar()}Layout";
-                string description = yamlData.GetValueOrDefault("description", string.Empty).Trim('"');
+                string description = frontMatter.GetString("description");
 
                 if (update)
                 {
                     // add or update the lastmodified in the yaml data
-                    yamlData["lastmodified"] = $"\"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}\"";
-                
+                    frontMatter.Set("lastmodified", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
+
                     // rewrite the yaml front-matter with the updated lastmodified date
                     StringBuilder newYamlBuilder = new StringBuilder();
                     newYamlBuilder.AppendLine("---");
-                    foreach (var kvp in yamlData)
-                    {
-                        newYamlBuilder.AppendLine($"{kvp.Key}: {kvp.Value}");
-                    }
+                    newYamlBuilder.Append(frontMatter.Serialize());
                     newYamlBuilder.AppendLine("---");
                     newYamlBuilder.AppendLine(string.Join(Environment.NewLine, markdownLines));
                     File.WriteAllText(post, newYamlBuilder.ToString());
@@ -168,16 +163,15 @@ public static class MarkupParser
         string postContent = ParseMarkdownLines(markdownLines, ref resultLines, 
             ref razorComponentSections, ref scripts);
 
-        Dictionary<string, string> yamlData = GetYamlData(yaml);
+        FrontMatter frontMatter = FrontMatter.Parse(yaml);
         string urlPath = fileName == "index" ? "/" : fileName;
 
-        string title = yamlData.GetValueOrDefault("title", "Untitled").Trim('"');
-        string navOrderString = yamlData.GetValueOrDefault("navorder", "0").Trim('"');
-        int navOrder = int.TryParse(navOrderString, out var order) ? order : 0;
-        string subTitle = yamlData.GetValueOrDefault("subtitle", string.Empty).Trim('"');
-        string layout = yamlData.GetValueOrDefault("layout", "page").Trim('"');
+        string title = frontMatter.GetString("title", "Untitled");
+        int navOrder = int.TryParse(frontMatter.GetString("navorder", "0"), out var order) ? order : 0;
+        string subTitle = frontMatter.GetString("subtitle");
+        string layout = frontMatter.GetString("layout", "page");
         layout = $"{layout.ToUpperFirstChar()}Layout";
-        string description = yamlData.GetValueOrDefault("description", string.Empty).Trim('"');
+        string description = frontMatter.GetString("description");
         
         return new PageMetaData(title, subTitle, urlPath, postContent, 
             razorComponentSections, scripts, layout, description, navOrder);
@@ -466,24 +460,6 @@ public static class MarkupParser
         return new PageMetaData(title, string.Empty, urlPath, htmlContent, 
             razorComponentSections, scripts, "PageLayout", 
             string.Empty, 0);
-    }
-
-    private static Dictionary<string, string> GetYamlData(string yaml)
-    {
-        Dictionary<string, string> yamlData = new Dictionary<string, string>();
-        // Parse YAML front-matter into a dictionary
-        foreach (string line in yaml.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            string[] keyValue = line.Split([':'], 2);
-            if (keyValue.Length == 2)
-            {
-                string key = keyValue[0].Trim();
-                string value = keyValue[1].Trim();
-                yamlData[key] = value;
-            }
-        }
-
-        return yamlData;
     }
 
     private static string GenerateLoadingDiv(string codeBlockKey)
