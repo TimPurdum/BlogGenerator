@@ -31,7 +31,8 @@
             </header>
             @if (!string.IsNullOrWhiteSpace(CoverImage))
             {
-                <img class="music-cover" src="@CoverImage" alt="@Title" />
+                @* Title is MarkupString — using .Value so Razor HTML-encodes the attribute. *@
+                <img class="music-cover" src="@CoverImage" alt="@Title.Value" />
             }
             @if (!string.IsNullOrWhiteSpace(EmbedUrl))
             {

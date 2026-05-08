@@ -1,5 +1,10 @@
 namespace TimPurdum.Dev.BlogGenerator.Shared;
 
+// URL convention (matches PostMetaData): the Url field is extensionless — e.g. "/music/dvorak-cello-concerto",
+// "/show/2026/9/12/spring-concert", "/gallery/winter-series". Consumers append ".html" at href-render time
+// (see NavMenu.razor / Index.razor on timpurdum.dev for the established pattern).
+// Generated files on disk are at OutputPath, which DOES include the .html extension.
+
 /// <summary>
 /// A music portfolio entry. Surfaced to user-authored landing pages via <c>List&lt;MusicMetaData&gt;</c>
 /// parameter on <see cref="MarkupComponent"/>.
