@@ -25,17 +25,29 @@
     [Parameter]
     public List<LinkData>? NavLinks { get; set; }
 
+    [Parameter]
+    public List<MusicMetaData>? MusicEntries { get; set; }
+
+    [Parameter]
+    public List<ShowMetaData>? ShowEntries { get; set; }
+
+    [Parameter]
+    public List<GalleryMetaData>? GalleryEntries { get; set; }
+
     protected override void OnParametersSet()
     {
         _parameters = new Dictionary<string, object?>
         {
             { nameof(Title), Title },
-            { nameof(SiteTitle), SiteTitle }, 
+            { nameof(SiteTitle), SiteTitle },
             { nameof(SiteDescription), SiteDescription },
             { nameof(Url), Url },
             { nameof(SiteName), SiteName },
             { nameof(HeaderLinks), HeaderLinks },
-            { nameof(NavLinks), NavLinks }
+            { nameof(NavLinks), NavLinks },
+            { nameof(MusicEntries), MusicEntries },
+            { nameof(ShowEntries), ShowEntries },
+            { nameof(GalleryEntries), GalleryEntries }
         };
         
         PropertyInfo[] properties = ComponentType.GetProperties(BindingFlags.Public | BindingFlags.Instance);

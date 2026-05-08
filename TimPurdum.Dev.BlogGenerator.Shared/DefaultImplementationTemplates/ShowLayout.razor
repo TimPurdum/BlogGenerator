@@ -1,0 +1,50 @@
+@inherits BaseShowLayout
+
+<Header NavLinks="NavLinks"></Header>
+<main class="page-content" aria-label="content">
+    <div class="wrapper">
+        <article class="show-entry">
+            <header class="show-header">
+                <h1 class="show-title">@Title</h1>
+                @if (SubTitle is not null)
+                {
+                    <h2 class="show-subtitle">@SubTitle</h2>
+                }
+                @if (PerformanceDate is not null)
+                {
+                    <p class="show-meta">
+                        <time datetime="@PerformanceDate.Value.ToString("yyyy-MM-dd")">@PerformanceDate.Value.ToString("dddd, MMM dd, yyyy")</time>
+                        @if (!string.IsNullOrWhiteSpace(Time))
+                        {
+                            <span> &middot; @Time</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(Venue))
+                        {
+                            <span> &middot; @Venue</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(City))
+                        {
+                            <span>, @City</span>
+                        }
+                    </p>
+                }
+                @if (!string.IsNullOrWhiteSpace(Program))
+                {
+                    <p class="show-program"><strong>Program:</strong> @Program</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(Role))
+                {
+                    <p class="show-role"><strong>Role:</strong> @Role</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(TicketUrl))
+                {
+                    <p class="show-tickets"><a href="@TicketUrl" target="_blank" rel="noopener">Tickets</a></p>
+                }
+            </header>
+            <div class="show-content">
+                @Content
+            </div>
+        </article>
+    </div>
+</main>
+<Footer></Footer>
