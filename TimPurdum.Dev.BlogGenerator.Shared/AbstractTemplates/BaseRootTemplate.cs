@@ -42,6 +42,14 @@ public abstract class BaseRootTemplate: ComponentBase
     [Parameter]
     public List<MarkupString>? Scripts { get; set; }
 
+    /// <summary>
+    /// Type-specific parameters from the metadata record (e.g. Ensemble, Venue, Images for music/show/gallery).
+    /// Merged into <see cref="Parameters"/> after the standard set; the existing layout-property intersection
+    /// then forwards only the keys the active layout actually declares.
+    /// </summary>
+    [Parameter]
+    public Dictionary<string, object?>? ExtraParameters { get; set; }
+
     protected Type LayoutType
     {
         get
@@ -71,17 +79,38 @@ public abstract class BaseRootTemplate: ComponentBase
 
     private Type? _layoutType;
     private PropertyInfo[]? _layoutProperties;
-    protected Dictionary<string, object?> Parameters => new Dictionary<string, object?>
+    private Dictionary<string, object?>? _cachedParameters;
+
+    protected override void OnParametersSet() => _cachedParameters = null;
+
+    protected Dictionary<string, object?> Parameters => _cachedParameters ??= BuildParameters();
+
+    private Dictionary<string, object?> BuildParameters()
     {
-        { nameof(Title), Title },
-        { nameof(SubTitle), SubTitle }, 
-        { nameof(PublishedDate), PublishedDate },
-        { nameof(Content), Content },
-        { nameof(Author), Author },
-        { nameof(Url), Url },
-        { nameof(SiteName), SiteName },
-        { nameof(Description), Description },
-        { nameof(NavLinks), NavLinks }
-    }.Where(kv => LayoutProperties.Any(p => p.Name.Equals(kv.Key, StringComparison.OrdinalIgnoreCase)))
-        .ToDictionary(kv => kv.Key, kv => kv.Value);
+        Dictionary<string, object?> baseParams = new()
+        {
+            { nameof(Title), Title },
+            { nameof(SubTitle), SubTitle },
+            { nameof(PublishedDate), PublishedDate },
+            { nameof(Content), Content },
+            { nameof(Author), Author },
+            { nameof(Url), Url },
+            { nameof(SiteName), SiteName },
+            { nameof(Description), Description },
+            { nameof(NavLinks), NavLinks }
+        };
+
+        if (ExtraParameters is not null)
+        {
+            foreach (KeyValuePair<string, object?> kv in ExtraParameters)
+            {
+                // Type-specific extras override generic base values: the metadata record is the authoritative source for that content type.
+                baseParams[kv.Key] = kv.Value;
+            }
+        }
+
+        return baseParams
+            .Where(kv => LayoutProperties.Any(p => p.Name.Equals(kv.Key, StringComparison.OrdinalIgnoreCase)))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+    }
 }

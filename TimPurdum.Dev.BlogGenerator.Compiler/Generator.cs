@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using TimPurdum.Dev.BlogGenerator.Shared;
 using TimPurdum.Dev.BlogGenerator.Shared.AbstractTemplates;
@@ -14,6 +13,13 @@ public static class Generator
     private static ILoggerFactory? _loggerFactory;
     public static BlogSettings? BlogSettings;
 
+    /// <summary>Collections exposed to user-authored landing pages via <see cref="MarkupComponent"/>.
+    /// Replaced (not mutated) inside <see cref="GenerateSite"/> before pages are rendered.</summary>
+    // TODO: collapse static state into an injected context (BlogSettings + collections) — broader refactor across MarkupParser + Generator.
+    public static List<MusicMetaData> MusicEntries = [];
+    public static List<ShowMetaData> ShowEntries = [];
+    public static List<GalleryMetaData> GalleryEntries = [];
+
     public static async Task GenerateSite(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider;
@@ -21,48 +27,71 @@ public static class Generator
         BlogSettings = serviceProvider.GetRequiredService<BlogSettings>();
         await using HtmlRenderer renderer = new(_serviceProvider, _loggerFactory);
 
-        var posts = MarkupParser.GeneratePostMetaDatas();
-        List<LinkData> navLinks = [];
+        List<PostMetaData> posts = MarkupParser.GeneratePostMetaDatas();
+        MusicEntries = MarkupParser.GenerateMusicMetaDatas();
+        ShowEntries = MarkupParser.GenerateShowMetaDatas();
+        GalleryEntries = MarkupParser.GenerateGalleryMetaDatas();
 
-        foreach (var post in posts)
+        List<LinkData> navLinks = [];
+        foreach (PostMetaData post in posts)
         {
             navLinks.Add(new LinkData(post.Title, post.SubTitle, post.Url,
                 post.PublishedDate, post.Author));
         }
 
-        var pages = await MarkupParser.GeneratePageMetaDatas(navLinks);
+        List<PageMetaData> pages = await MarkupParser.GeneratePageMetaDatas(navLinks);
 
         Type rootTemplateType = Assembly.LoadFile(BlogSettings.SourceAssemblyOutputPath!).GetTypes()
                    .FirstOrDefault(t => t.IsSubclassOf(typeof(BaseRootTemplate)))
                ?? typeof(RootTemplate);
 
-        foreach (var page in pages)
+        foreach (PageMetaData page in pages)
         {
-            var html = await RenderPage(page, renderer, navLinks, rootTemplateType);
-            var fileName = Path.GetFileNameWithoutExtension(page.Url);
+            string html = await RenderPage(page, renderer, navLinks, rootTemplateType);
+            string fileName = Path.GetFileNameWithoutExtension(page.Url);
             if (string.IsNullOrWhiteSpace(fileName) || fileName == Path.DirectorySeparatorChar.ToString())
                 fileName = "index";
-            var filePath = Path.Combine(BlogSettings.OutputWebRootPath, $"{fileName}.html");
+            string filePath = Path.Combine(BlogSettings.OutputWebRootPath, $"{fileName}.html");
             await File.WriteAllTextAsync(filePath, html);
 
             await CreateRazorComponents(page.RazorComponents);
         }
 
-        foreach (var post in posts)
+        foreach (PostMetaData post in posts)
         {
-            if (!post.Update)
-            {
-                continue;
-            }
-            
-            var html = await RenderPost(post, renderer, navLinks, rootTemplateType);
+            if (!post.Update) continue;
+            string html = await RenderPost(post, renderer, navLinks, rootTemplateType);
             await File.WriteAllTextAsync(post.OutputPath, html);
             await CreateRazorComponents(post.RazorComponents);
         }
 
-        // Generate the RSS feed
-        var rssXml = await RssFeedGenerator.GenerateRssFeed(posts);
-        var rssFilePath = Path.Combine(BlogSettings.OutputWebRootPath, "feed.xml");
+        foreach (MusicMetaData music in MusicEntries)
+        {
+            if (!music.Update) continue;
+            string html = await RenderMusic(music, renderer, navLinks, rootTemplateType);
+            await File.WriteAllTextAsync(music.OutputPath, html);
+            await CreateRazorComponents(music.RazorComponents);
+        }
+
+        foreach (ShowMetaData show in ShowEntries)
+        {
+            if (!show.Update) continue;
+            string html = await RenderShow(show, renderer, navLinks, rootTemplateType);
+            await File.WriteAllTextAsync(show.OutputPath, html);
+            await CreateRazorComponents(show.RazorComponents);
+        }
+
+        foreach (GalleryMetaData gallery in GalleryEntries)
+        {
+            if (!gallery.Update) continue;
+            string html = await RenderGallery(gallery, renderer, navLinks, rootTemplateType);
+            await File.WriteAllTextAsync(gallery.OutputPath, html);
+            await CreateRazorComponents(gallery.RazorComponents);
+        }
+
+        // RSS feed (posts only for now; extending to music/shows is a Phase 4 polish item)
+        string rssXml = await RssFeedGenerator.GenerateRssFeed(posts);
+        string rssFilePath = Path.Combine(BlogSettings.OutputWebRootPath, "feed.xml");
         await File.WriteAllTextAsync(rssFilePath, rssXml);
     }
 
@@ -71,77 +100,132 @@ public static class Generator
         await using HtmlRenderer renderer = new(_serviceProvider!, _loggerFactory!);
         return await renderer.Dispatcher.InvokeAsync(async () =>
         {
-            var parameterView = ParameterView.FromDictionary(parameters);
-
-            var root = await renderer
-                .RenderComponentAsync<MarkupComponent>(parameterView);
-
+            ParameterView parameterView = ParameterView.FromDictionary(parameters);
+            var root = await renderer.RenderComponentAsync<MarkupComponent>(parameterView);
             return root.ToHtmlString();
         });
     }
 
-    private static async Task<string> RenderPage(PageMetaData page, HtmlRenderer renderer, List<LinkData> navLinks,
+    private static Task<string> RenderPage(PageMetaData page, HtmlRenderer renderer, List<LinkData> navLinks,
+        Type rootTemplateType)
+        => RenderRoot(
+            layout: page.Layout,
+            title: (MarkupString)page.Title,
+            subTitle: (MarkupString)page.SubTitle,
+            description: (MarkupString)page.Description,
+            publishedDate: null,
+            author: null,
+            url: page.Url,
+            content: (MarkupString)page.Content,
+            scriptTags: page.ScriptTags,
+            extraParameters: null,
+            renderer, navLinks, rootTemplateType);
+
+    private static Task<string> RenderPost(PostMetaData post, HtmlRenderer renderer, List<LinkData> navLinks,
+        Type rootTemplateType)
+        => RenderRoot(
+            layout: post.Layout,
+            title: (MarkupString)post.Title,
+            subTitle: (MarkupString)post.SubTitle,
+            description: (MarkupString)post.Description,
+            publishedDate: post.PublishedDate,
+            author: post.Author,
+            url: post.Url,
+            content: (MarkupString)post.Content,
+            scriptTags: post.ScriptTags,
+            extraParameters: null,
+            renderer, navLinks, rootTemplateType);
+
+    private static Task<string> RenderMusic(MusicMetaData music, HtmlRenderer renderer, List<LinkData> navLinks,
+        Type rootTemplateType)
+        => RenderRoot(
+            layout: music.Layout,
+            title: (MarkupString)music.Title,
+            subTitle: (MarkupString)music.SubTitle,
+            description: (MarkupString)music.Description,
+            publishedDate: null,
+            author: null,
+            url: music.Url,
+            content: (MarkupString)music.Content,
+            scriptTags: music.ScriptTags,
+            extraParameters: music.ExtraParameters,
+            renderer, navLinks, rootTemplateType);
+
+    private static Task<string> RenderShow(ShowMetaData show, HtmlRenderer renderer, List<LinkData> navLinks,
+        Type rootTemplateType)
+        => RenderRoot(
+            layout: show.Layout,
+            title: (MarkupString)show.Title,
+            subTitle: (MarkupString)show.SubTitle,
+            description: (MarkupString)show.Description,
+            publishedDate: null,
+            author: null,
+            url: show.Url,
+            content: (MarkupString)show.Content,
+            scriptTags: show.ScriptTags,
+            extraParameters: show.ExtraParameters,
+            renderer, navLinks, rootTemplateType);
+
+    private static Task<string> RenderGallery(GalleryMetaData gallery, HtmlRenderer renderer, List<LinkData> navLinks,
+        Type rootTemplateType)
+        => RenderRoot(
+            layout: gallery.Layout,
+            title: (MarkupString)gallery.Title,
+            subTitle: (MarkupString)gallery.SubTitle,
+            description: (MarkupString)gallery.Description,
+            publishedDate: null,
+            author: null,
+            url: gallery.Url,
+            content: (MarkupString)gallery.Content,
+            scriptTags: gallery.ScriptTags,
+            extraParameters: gallery.ExtraParameters,
+            renderer, navLinks, rootTemplateType);
+
+    private static async Task<string> RenderRoot(
+        string layout,
+        MarkupString title,
+        MarkupString? subTitle,
+        MarkupString? description,
+        DateTime? publishedDate,
+        string? author,
+        string? url,
+        MarkupString content,
+        List<string> scriptTags,
+        Dictionary<string, object?>? extraParameters,
+        HtmlRenderer renderer,
+        List<LinkData> navLinks,
         Type rootTemplateType)
     {
         return await renderer.Dispatcher.InvokeAsync(async () =>
         {
             Dictionary<string, object?> parameters = new()
             {
-                { nameof(BaseRootTemplate.Layout), page.Layout },
+                { nameof(BaseRootTemplate.Layout), layout },
                 { nameof(BaseRootTemplate.NavLinks), navLinks },
-                { nameof(BaseRootTemplate.Title), (MarkupString)page.Title },
-                { nameof(BaseRootTemplate.SubTitle), (MarkupString)page.SubTitle },
-                { nameof(BaseRootTemplate.Description), (MarkupString)page.Description },
-                { nameof(BaseRootTemplate.PublishedDate), null },
-                { nameof(BaseRootTemplate.Author), null },
-                { nameof(BaseRootTemplate.Url), page.Url },
-                { nameof(BaseRootTemplate.Content), (MarkupString)page.Content },
+                { nameof(BaseRootTemplate.Title), title },
+                { nameof(BaseRootTemplate.SubTitle), subTitle },
+                { nameof(BaseRootTemplate.Description), description },
+                { nameof(BaseRootTemplate.PublishedDate), publishedDate },
+                { nameof(BaseRootTemplate.Author), author },
+                { nameof(BaseRootTemplate.Url), url },
+                { nameof(BaseRootTemplate.Content), content },
                 { nameof(BaseRootTemplate.SiteName), BlogSettings!.SiteName },
                 { nameof(BaseRootTemplate.HeaderLinks), (MarkupString)string.Join(Environment.NewLine, BlogSettings.HeaderLinks) },
-                { nameof(BaseRootTemplate.Scripts), page.ScriptTags.Select(s => (MarkupString)s).ToList() }
+                { nameof(BaseRootTemplate.Scripts), scriptTags.Select(s => (MarkupString)s).ToList() },
+                { nameof(BaseRootTemplate.ExtraParameters), extraParameters }
             };
-            var parameterView = ParameterView.FromDictionary(parameters);
-            var root = await renderer
-                .RenderComponentAsync(rootTemplateType, parameterView);
-            return root.ToHtmlString();
-        });
-    }
-
-    private static async Task<string> RenderPost(PostMetaData post, HtmlRenderer renderer, List<LinkData> navLinks,
-        Type rootTemplateType)
-    {
-        return await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            Dictionary<string, object?> parameters = new()
-            {
-                { nameof(BaseRootTemplate.Layout), post.Layout },
-                { nameof(BaseRootTemplate.NavLinks), navLinks },
-                { nameof(BaseRootTemplate.Title), (MarkupString)post.Title },
-                { nameof(BaseRootTemplate.SubTitle), (MarkupString)post.SubTitle },
-                { nameof(BaseRootTemplate.Description), (MarkupString)post.Description },
-                { nameof(BaseRootTemplate.PublishedDate), post.PublishedDate },
-                { nameof(BaseRootTemplate.Author), post.Author },
-                { nameof(BaseRootTemplate.Url), post.Url },
-                { nameof(BaseRootTemplate.Content), (MarkupString)post.Content },
-                { nameof(BaseRootTemplate.SiteName), BlogSettings!.SiteName },
-                { nameof(BaseRootTemplate.HeaderLinks), (MarkupString)string.Join(Environment.NewLine, BlogSettings.HeaderLinks) },
-                { nameof(BaseRootTemplate.Scripts), post.ScriptTags.Select(s => (MarkupString)s).ToList() }
-            };
-            var parameterView = ParameterView.FromDictionary(parameters);
-            var root = await renderer
-                .RenderComponentAsync(rootTemplateType, parameterView);
+            ParameterView parameterView = ParameterView.FromDictionary(parameters);
+            var root = await renderer.RenderComponentAsync(rootTemplateType, parameterView);
             return root.ToHtmlString();
         });
     }
 
     private static async Task CreateRazorComponents(Dictionary<string, string> components)
     {
-        foreach (var kvp in components)
+        foreach (KeyValuePair<string, string> kvp in components)
         {
-            var componentName = kvp.Key.KebabCaseToPascalCase();
-            // add Preserve method to prevent trimming of components
-            var componentContent = kvp.Value;
-
+            string componentName = kvp.Key.KebabCaseToPascalCase();
+            string componentContent = kvp.Value;
             componentContent += $$"""
 
                                   @code
@@ -152,8 +236,7 @@ public static class Generator
                                   }
                                   """;
 
-            // Write the component content to a file
-            var componentFilePath = Path.Combine(BlogSettings!.OutputComponentsPath,
+            string componentFilePath = Path.Combine(BlogSettings!.OutputComponentsPath,
                 $"{componentName}.razor");
             await File.WriteAllTextAsync(componentFilePath, componentContent);
 

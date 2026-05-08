@@ -73,6 +73,21 @@ blogSettings.PagesContentPath = Path.GetFullPath(
     Path.Combine(sourceProjectFolderPath, blogSettings.PagesContentPath));
 blogSettings.PostsContentPath = Path.GetFullPath(
     Path.Combine(sourceProjectFolderPath, blogSettings.PostsContentPath));
+if (!string.IsNullOrWhiteSpace(blogSettings.MusicContentPath))
+{
+    blogSettings.MusicContentPath = Path.GetFullPath(
+        Path.Combine(sourceProjectFolderPath, blogSettings.MusicContentPath));
+}
+if (!string.IsNullOrWhiteSpace(blogSettings.ShowsContentPath))
+{
+    blogSettings.ShowsContentPath = Path.GetFullPath(
+        Path.Combine(sourceProjectFolderPath, blogSettings.ShowsContentPath));
+}
+if (!string.IsNullOrWhiteSpace(blogSettings.GalleryContentPath))
+{
+    blogSettings.GalleryContentPath = Path.GetFullPath(
+        Path.Combine(sourceProjectFolderPath, blogSettings.GalleryContentPath));
+}
 blogSettings.SourceTemplatesPath = Path.GetFullPath(
     Path.Combine(sourceProjectFolderPath, blogSettings.SourceTemplatesPath));
 blogSettings.BlogRootPath = blogProjectFolderPath;

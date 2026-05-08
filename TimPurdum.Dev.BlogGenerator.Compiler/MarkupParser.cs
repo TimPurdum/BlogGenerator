@@ -4,6 +4,7 @@ using Markdig.Parsers;
 using Markdig.Syntax;
 using Microsoft.AspNetCore.Components;
 using TimPurdum.Dev.BlogGenerator.Shared;
+using TimPurdum.Dev.BlogGenerator.Shared.AbstractTemplates;
 
 namespace TimPurdum.Dev.BlogGenerator.Compiler;
 
@@ -111,6 +112,286 @@ public static class MarkupParser
             }
 
             return null;
+    }
+
+    public static List<MusicMetaData> GenerateMusicMetaDatas()
+    {
+        BlogSettings settings = Generator.BlogSettings!;
+        if (string.IsNullOrWhiteSpace(settings.MusicContentPath) || !Directory.Exists(settings.MusicContentPath))
+        {
+            return [];
+        }
+
+        string[] files = Directory.GetFiles(settings.MusicContentPath, "*.md", SearchOption.AllDirectories);
+        List<MusicMetaData> result = [];
+        Dictionary<string, string> seenSlugs = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string file in files)
+        {
+            ParsedEntry? parsed = ParseEntryFile(
+                file,
+                Resources.PostNameRegex,
+                m => new DateTime(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value)),
+                (slug, _) => Path.Combine(settings.OutputWebRootPath, "music", $"{slug}.html"),
+                "music");
+            if (parsed is null) continue;
+
+            CheckSlugCollision(parsed.Slug, file, seenSlugs, contentType: "music",
+                urlExample: $"/music/{parsed.Slug}.html");
+
+            string description = parsed.FrontMatter.GetString("description");
+            Dictionary<string, object?> extra = new()
+            {
+                [nameof(BaseMusicLayout.Date)] = parsed.Date,
+                [nameof(BaseMusicLayout.Type)] = parsed.FrontMatter.GetString("type"),
+                [nameof(BaseMusicLayout.Ensemble)] = parsed.FrontMatter.GetString("ensemble"),
+                [nameof(BaseMusicLayout.Role)] = parsed.FrontMatter.GetString("role"),
+                [nameof(BaseMusicLayout.Venue)] = parsed.FrontMatter.GetString("venue"),
+                [nameof(BaseMusicLayout.EmbedUrl)] = parsed.FrontMatter.GetString("embedUrl"),
+                [nameof(BaseMusicLayout.CoverImage)] = parsed.FrontMatter.GetString("coverImage"),
+                [nameof(BaseMusicLayout.Description)] = description
+            };
+
+            if (parsed.Update) RewriteFrontMatter(file, parsed.FrontMatter, parsed.MarkdownLines);
+
+            result.Add(new MusicMetaData(
+                parsed.FrontMatter.GetString("title", "Untitled"),
+                parsed.FrontMatter.GetString("subtitle"),
+                $"/music/{parsed.Slug}",
+                parsed.Date,
+                parsed.Content,
+                parsed.RazorComponents,
+                parsed.ScriptTags,
+                $"{parsed.FrontMatter.GetString("layout", "music").ToUpperFirstChar()}Layout",
+                description,
+                parsed.OutputPath,
+                parsed.Update,
+                extra));
+        }
+        return result;
+    }
+
+    public static List<ShowMetaData> GenerateShowMetaDatas()
+    {
+        BlogSettings settings = Generator.BlogSettings!;
+        if (string.IsNullOrWhiteSpace(settings.ShowsContentPath) || !Directory.Exists(settings.ShowsContentPath))
+        {
+            return [];
+        }
+
+        string[] files = Directory.GetFiles(settings.ShowsContentPath, "*.md", SearchOption.AllDirectories);
+        List<ShowMetaData> result = [];
+
+        foreach (string file in files)
+        {
+            ParsedEntry? parsed = ParseEntryFile(
+                file,
+                Resources.PostNameRegex,
+                m => new DateTime(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value)),
+                (slug, d) => Path.Combine(settings.OutputWebRootPath, "show", d.Year.ToString(), d.Month.ToString(), d.Day.ToString(), $"{slug}.html"),
+                "show");
+            if (parsed is null) continue;
+
+            string description = parsed.FrontMatter.GetString("description");
+            Dictionary<string, object?> extra = new()
+            {
+                [nameof(BaseShowLayout.PerformanceDate)] = parsed.Date,
+                [nameof(BaseShowLayout.Time)] = parsed.FrontMatter.GetString("time"),
+                [nameof(BaseShowLayout.Venue)] = parsed.FrontMatter.GetString("venue"),
+                [nameof(BaseShowLayout.City)] = parsed.FrontMatter.GetString("city"),
+                [nameof(BaseShowLayout.TicketUrl)] = parsed.FrontMatter.GetString("ticketUrl"),
+                [nameof(BaseShowLayout.Program)] = parsed.FrontMatter.GetString("program"),
+                [nameof(BaseShowLayout.Role)] = parsed.FrontMatter.GetString("role"),
+                [nameof(BaseShowLayout.Description)] = description
+            };
+
+            if (parsed.Update) RewriteFrontMatter(file, parsed.FrontMatter, parsed.MarkdownLines);
+
+            result.Add(new ShowMetaData(
+                parsed.FrontMatter.GetString("title", "Untitled"),
+                parsed.FrontMatter.GetString("subtitle"),
+                $"/show/{parsed.Date.Year}/{parsed.Date.Month}/{parsed.Date.Day}/{parsed.Slug}",
+                parsed.Date,
+                parsed.Content,
+                parsed.RazorComponents,
+                parsed.ScriptTags,
+                $"{parsed.FrontMatter.GetString("layout", "show").ToUpperFirstChar()}Layout",
+                description,
+                parsed.OutputPath,
+                parsed.Update,
+                extra));
+        }
+        return result;
+    }
+
+    public static List<GalleryMetaData> GenerateGalleryMetaDatas()
+    {
+        BlogSettings settings = Generator.BlogSettings!;
+        if (string.IsNullOrWhiteSpace(settings.GalleryContentPath) || !Directory.Exists(settings.GalleryContentPath))
+        {
+            return [];
+        }
+
+        string[] files = Directory.GetFiles(settings.GalleryContentPath, "*.md", SearchOption.AllDirectories);
+        List<GalleryMetaData> result = [];
+        Dictionary<string, string> seenSlugs = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string file in files)
+        {
+            ParsedEntry? parsed = ParseEntryFile(
+                file,
+                Resources.GalleryNameRegex,
+                m => new DateTime(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), 1),
+                (slug, _) => Path.Combine(settings.OutputWebRootPath, "gallery", $"{slug}.html"),
+                "gallery");
+            if (parsed is null) continue;
+
+            CheckSlugCollision(parsed.Slug, file, seenSlugs, contentType: "gallery",
+                urlExample: $"/gallery/{parsed.Slug}.html");
+
+            string description = parsed.FrontMatter.GetString("description");
+            List<GalleryImage> images = parsed.FrontMatter.GetMappingList("images")
+                .Select(d => new GalleryImage(
+                    d.GetValueOrDefault("src", string.Empty),
+                    d.GetValueOrDefault("caption", string.Empty)))
+                .ToList();
+
+            Dictionary<string, object?> extra = new()
+            {
+                [nameof(BaseGalleryLayout.Date)] = parsed.Date,
+                [nameof(BaseGalleryLayout.Images)] = images,
+                [nameof(BaseGalleryLayout.Description)] = description
+            };
+
+            if (parsed.Update) RewriteFrontMatter(file, parsed.FrontMatter, parsed.MarkdownLines);
+
+            result.Add(new GalleryMetaData(
+                parsed.FrontMatter.GetString("title", "Untitled"),
+                parsed.FrontMatter.GetString("subtitle"),
+                $"/gallery/{parsed.Slug}",
+                parsed.Date,
+                parsed.Content,
+                parsed.RazorComponents,
+                parsed.ScriptTags,
+                $"{parsed.FrontMatter.GetString("layout", "gallery").ToUpperFirstChar()}Layout",
+                description,
+                parsed.OutputPath,
+                parsed.Update,
+                images,
+                extra));
+        }
+        return result;
+    }
+
+    /// <summary>Common parse output: filename slug, date, frontmatter, rendered markdown, scripts, update flag.</summary>
+    private record ParsedEntry(
+        string Slug,
+        DateTime Date,
+        FrontMatter FrontMatter,
+        string Content,
+        Dictionary<string, string> RazorComponents,
+        List<string> ScriptTags,
+        string OutputPath,
+        bool Update,
+        List<string> MarkdownLines);
+
+    /// <summary>
+    /// Reads, regex-matches, frontmatter-parses, lastmodified-merges, and markdown-renders an entry file.
+    /// On any parse error, logs and returns null (matches <see cref="GeneratePostMetaData"/> behavior).
+    /// Does not perform slug uniqueness — call <see cref="CheckSlugCollision"/> from the typed parser when needed.
+    /// </summary>
+    private static ParsedEntry? ParseEntryFile(
+        string file,
+        Regex nameRegex,
+        Func<Match, DateTime> dateFromMatch,
+        Func<string, DateTime, string> outputPathResolver,
+        string entryTypeForLogging)
+    {
+        string fileName = Path.GetFileNameWithoutExtension(file);
+        if (nameRegex.Match(fileName) is not { Success: true } match)
+        {
+            Console.WriteLine($"Skipping {entryTypeForLogging} entry {fileName} due to invalid name format.");
+            return null;
+        }
+
+        string slug = match.Groups["fileName"].Value;
+        DateTime date;
+        try
+        {
+            date = dateFromMatch(match);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error parsing date for {entryTypeForLogging} entry {fileName}: {ex.Message}");
+            return null;
+        }
+
+        try
+        {
+            string fileContent = File.ReadAllText(file);
+            Match yamlMatch = Resources.FileRegex.Match(fileContent);
+            if (!yamlMatch.Success)
+            {
+                Console.WriteLine($"{entryTypeForLogging} entry {fileName}: missing YAML frontmatter.");
+                return null;
+            }
+
+            FrontMatter frontMatter = FrontMatter.Parse(yamlMatch.Groups[1].Value);
+            string markdownContent = yamlMatch.Groups[2].Value;
+
+            DateTime fileLastModified = File.GetLastWriteTimeUtc(file);
+            DateTime? lastModified = frontMatter.GetDateTime("lastmodified");
+            if (lastModified.HasValue && lastModified.Value > fileLastModified)
+            {
+                fileLastModified = lastModified.Value;
+            }
+
+            string outputPath = outputPathResolver(slug, date);
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+            DateTime outFileLastModified = File.Exists(outputPath)
+                ? File.GetLastWriteTimeUtc(outputPath)
+                : DateTime.MinValue;
+            bool update = !(outFileLastModified >= fileLastModified && outFileLastModified >= date);
+
+            List<string> markdownLines = markdownContent.Split(Environment.NewLine).ToList();
+            List<string> resultLines = [];
+            Dictionary<string, string> razorComponents = [];
+            List<string> scripts = [];
+            string content = ParseMarkdownLines(markdownLines, ref resultLines, ref razorComponents, ref scripts);
+
+            return new ParsedEntry(slug, date, frontMatter, content, razorComponents, scripts,
+                outputPath, update, markdownLines);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating {entryTypeForLogging} entry {fileName}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Throws on duplicate slug for flat-URL collections (D11). Aborts the build with a message naming both files.</summary>
+    private static void CheckSlugCollision(string slug, string file, Dictionary<string, string> seen,
+        string contentType, string urlExample)
+    {
+        if (seen.TryGetValue(slug, out string? previousFile))
+        {
+            throw new InvalidOperationException(
+                $"Duplicate {contentType} slug '{slug}'. Conflicting files: '{previousFile}' and '{file}'. " +
+                $"{contentType} URLs are flat ('{urlExample}'); rename one of the files.");
+        }
+        seen[slug] = file;
+    }
+
+    private static void RewriteFrontMatter(string file, FrontMatter frontMatter, List<string> markdownLines)
+    {
+        frontMatter.Set("lastmodified", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
+
+        StringBuilder newYamlBuilder = new();
+        newYamlBuilder.AppendLine("---");
+        newYamlBuilder.Append(frontMatter.Serialize());
+        newYamlBuilder.AppendLine("---");
+        newYamlBuilder.AppendLine(string.Join(Environment.NewLine, markdownLines));
+        File.WriteAllText(file, newYamlBuilder.ToString());
     }
 
     public static async Task<List<PageMetaData>> GeneratePageMetaDatas(List<LinkData> navLinks)
@@ -452,7 +733,13 @@ public static class MarkupParser
             { nameof(BlogSettings.SiteName), Generator.BlogSettings!.SiteName },
             { nameof(BlogSettings.HeaderLinks), (MarkupString)string.Join(Environment.NewLine, Generator.BlogSettings.HeaderLinks) },
             { nameof(BlogSettings.SiteTitle), Generator.BlogSettings.SiteTitle },
-            { nameof(BlogSettings.SiteDescription), (MarkupString)Generator.BlogSettings.SiteDescription }
+            { nameof(BlogSettings.SiteDescription), (MarkupString)Generator.BlogSettings.SiteDescription },
+            // Type-specific collections — MarkupComponent.OnParametersSet filters these to whatever the page declares.
+            // TODO Phase 2: markdown-authored pages don't go through MarkupComponent today, so they can't access these collections.
+            // If a markdown landing page ever needs typed access, plumb forwarding through RenderRoot or convert it to .razor.
+            { nameof(MarkupComponent.MusicEntries), Generator.MusicEntries },
+            { nameof(MarkupComponent.ShowEntries), Generator.ShowEntries },
+            { nameof(MarkupComponent.GalleryEntries), Generator.GalleryEntries }
         };
 
         string htmlContent = await Generator.RenderComponent(parameters);

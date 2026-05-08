@@ -1,0 +1,45 @@
+@inherits BaseGalleryLayout
+
+<Header NavLinks="NavLinks"></Header>
+<main class="page-content" aria-label="content">
+    <div class="wrapper">
+        <article class="gallery-entry">
+            <header class="gallery-header">
+                <h1 class="gallery-title">@Title</h1>
+                @if (SubTitle is not null)
+                {
+                    <h2 class="gallery-subtitle">@SubTitle</h2>
+                }
+                @if (Date is not null)
+                {
+                    <p class="gallery-meta">
+                        <time datetime="@Date.Value.ToString("yyyy-MM")">@Date.Value.ToString("MMMM yyyy")</time>
+                    </p>
+                }
+                @if (!string.IsNullOrWhiteSpace(Description))
+                {
+                    <p class="gallery-description">@Description</p>
+                }
+            </header>
+            @if (Images is { Count: > 0 })
+            {
+                <div class="gallery-grid">
+                    @foreach (GalleryImage image in Images)
+                    {
+                        <figure class="gallery-figure">
+                            <img src="@image.Src" alt="@image.Caption" loading="lazy" />
+                            @if (!string.IsNullOrWhiteSpace(image.Caption))
+                            {
+                                <figcaption>@image.Caption</figcaption>
+                            }
+                        </figure>
+                    }
+                </div>
+            }
+            <div class="gallery-content">
+                @Content
+            </div>
+        </article>
+    </div>
+</main>
+<Footer></Footer>

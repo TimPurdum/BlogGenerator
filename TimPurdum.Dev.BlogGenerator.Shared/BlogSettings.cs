@@ -11,6 +11,12 @@ public class BlogSettings
     public string SourceProject { get; set; } = "../Source/Source.csproj";
     public string PostsContentPath { get; set; } = "Source/Content/Posts";
     public string PagesContentPath { get; set; } = "Source/Content/Pages";
+    /// <summary>Optional. When set and the directory exists, music entries are generated from markdown here.</summary>
+    public string? MusicContentPath { get; set; }
+    /// <summary>Optional. When set and the directory exists, show entries are generated from markdown here.</summary>
+    public string? ShowsContentPath { get; set; }
+    /// <summary>Optional. When set and the directory exists, gallery entries are generated from markdown here.</summary>
+    public string? GalleryContentPath { get; set; }
     public string OutputWebRootPath { get; set; } = "wwwroot";
     public string OutputComponentsPath { get; set; } = "Components";
     public string SourceTemplatesPath { get; set; } = "Source/Templates";
