@@ -20,22 +20,46 @@ while (blogProjectFolderPath is null)
         throw new Exception("Unable to find project folder");
     }
     string[] projectFiles = Directory.GetFiles(currentFolder, "*.csproj", SearchOption.AllDirectories);
-    foreach (string projectFile in projectFiles)
+
+    // Collect every Blazor WebAssembly project at this level — a repo may have more than one
+    // (e.g. a public site plus a separate admin app), and the first match isn't necessarily the blog host.
+    List<string> wasmProjects = projectFiles
+        .Where(p => Path.GetDirectoryName(p) != oldFolder)
+        .Where(p => File.ReadAllLines(p).Any(line => webAssemblySdkRegex.IsMatch(line)))
+        .ToList();
+
+    if (wasmProjects.Count == 0)
     {
-        string projectFolder = Path.GetDirectoryName(projectFile)!;
-        if (projectFolder == oldFolder)
+        continue; // walk further up the tree
+    }
+
+    string? selected;
+    if (wasmProjects.Count == 1)
+    {
+        selected = wasmProjects[0];
+    }
+    else
+    {
+        // Disambiguate: the blog project is the one with a wwwroot/appsettings.json that BlogGenerator
+        // can read its BlogSettings from. Other Blazor WebAssembly projects in the same repo (admin
+        // portals, satellite tools) won't have one.
+        List<string> withConfig = wasmProjects
+            .Where(p => File.Exists(Path.Combine(Path.GetDirectoryName(p)!, "wwwroot", "appsettings.json")))
+            .ToList();
+        if (withConfig.Count == 1)
         {
-            continue;
+            selected = withConfig[0];
         }
-        
-        string[] projectFileLines = File.ReadAllLines(projectFile);
-        if (projectFileLines.Any(line => webAssemblySdkRegex.IsMatch(line)))
+        else
         {
-            blogProjectFolderPath = projectFolder;
-            blogProjectName = Path.GetFileNameWithoutExtension(projectFile);
-            break;
+            throw new InvalidOperationException(
+                $"Multiple Blazor WebAssembly projects found and unable to choose one: {string.Join(", ", wasmProjects)}. " +
+                "Place wwwroot/appsettings.json next to exactly one of them so BlogGenerator can identify the blog host.");
         }
     }
+
+    blogProjectFolderPath = Path.GetDirectoryName(selected)!;
+    blogProjectName = Path.GetFileNameWithoutExtension(selected);
 }
 if (blogProjectFolderPath is null)
 {
