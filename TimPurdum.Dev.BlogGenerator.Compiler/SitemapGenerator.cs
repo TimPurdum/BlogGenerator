@@ -54,8 +54,13 @@ public static class SitemapGenerator
         if (lastModified.HasValue)
         {
             // W3C Datetime, date-only form — adequate for sitemap protocol and stable across rebuilds.
-            entry.Add(new XElement(Ns + "lastmod",
-                lastModified.Value.ToUniversalTime().ToString("yyyy-MM-dd")));
+            // Only convert Local-kind values to UTC; treat Unspecified (dates parsed without timezone,
+            // e.g. frontmatter strings) and Utc as-is to avoid off-by-one-day shifts on machines
+            // whose local offset moves the date across midnight.
+            DateTime dt = lastModified.Value.Kind == DateTimeKind.Local
+                ? lastModified.Value.ToUniversalTime()
+                : lastModified.Value;
+            entry.Add(new XElement(Ns + "lastmod", dt.ToString("yyyy-MM-dd")));
         }
         return entry;
     }
