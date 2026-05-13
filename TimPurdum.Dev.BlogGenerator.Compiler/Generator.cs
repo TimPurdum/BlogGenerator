@@ -108,7 +108,28 @@ public static class Generator
 
     private static Task<string> RenderPage(PageMetaData page, HtmlRenderer renderer, List<LinkData> navLinks,
         Type rootTemplateType)
-        => RenderRoot(
+    {
+        // Expose the typed collections so custom page layouts (e.g. a HomeLayout that needs upcoming
+        // shows) can declare them as [Parameter] props, plus any non-standard frontmatter the page
+        // author included (heroImage, custom flags, etc). BaseRootTemplate's reflection filter drops
+        // keys the layout doesn't declare.
+        Dictionary<string, object?> extras = new()
+        {
+            [nameof(MusicEntries)]   = MusicEntries,
+            [nameof(ShowEntries)]    = ShowEntries,
+            [nameof(GalleryEntries)] = GalleryEntries,
+        };
+        if (page.ExtraFrontMatter is not null)
+        {
+            foreach (KeyValuePair<string, string> kv in page.ExtraFrontMatter)
+            {
+                // PascalCase the key so it matches the conventional C# property name on the layout
+                // (frontmatter is lowercase, properties are PascalCase).
+                string camel = char.ToUpperInvariant(kv.Key[0]) + kv.Key[1..];
+                extras[camel] = kv.Value;
+            }
+        }
+        return RenderRoot(
             layout: page.Layout,
             title: (MarkupString)page.Title,
             subTitle: (MarkupString)page.SubTitle,
@@ -118,16 +139,9 @@ public static class Generator
             url: page.Url,
             content: (MarkupString)page.Content,
             scriptTags: page.ScriptTags,
-            // Expose the typed collections so custom page layouts (e.g. a HomeLayout that needs upcoming
-            // shows) can declare them as [Parameter] props and have them auto-bound via the existing
-            // BaseRootTemplate reflection trick. Layouts that don't declare these get filtered out.
-            extraParameters: new Dictionary<string, object?>
-            {
-                [nameof(MusicEntries)]   = MusicEntries,
-                [nameof(ShowEntries)]    = ShowEntries,
-                [nameof(GalleryEntries)] = GalleryEntries,
-            },
+            extraParameters: extras,
             renderer, navLinks, rootTemplateType);
+    }
 
     private static Task<string> RenderPost(PostMetaData post, HtmlRenderer renderer, List<LinkData> navLinks,
         Type rootTemplateType)
