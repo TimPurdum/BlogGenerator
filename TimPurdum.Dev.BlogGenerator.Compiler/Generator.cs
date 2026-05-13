@@ -89,8 +89,8 @@ public static class Generator
             await CreateRazorComponents(gallery.RazorComponents);
         }
 
-        // RSS feed (posts only for now; extending to music/shows is a Phase 4 polish item)
-        string rssXml = await RssFeedGenerator.GenerateRssFeed(posts);
+        // RSS feed — posts merged with music + shows, sorted newest-first.
+        string rssXml = await RssFeedGenerator.GenerateRssFeed(posts, MusicEntries, ShowEntries);
         string rssFilePath = Path.Combine(BlogSettings.OutputWebRootPath, "feed.xml");
         await File.WriteAllTextAsync(rssFilePath, rssXml);
 

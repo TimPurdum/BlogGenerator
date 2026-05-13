@@ -6,7 +6,7 @@ This project is a Blazor-based static site generator designed to create and mana
 
 - **Static Site Generation**: Converts Markdown content with YAML front matter into static HTML files
 - **Blazor Component Integration**: Embed interactive Blazor components directly in Markdown content using `blazor-component` code blocks
-- **RSS Feed Generation**: Automatically generates RSS feeds for blog posts
+- **RSS Feed Generation**: Automatically generates RSS feeds covering blog posts, with optional music and show entries merged into the same chronological feed
 - **Sitemap Generation**: Emits a sitemaps.org-compliant `sitemap.xml` covering pages, posts, and any configured music/shows/gallery collections
 - **Flexible Template System**: Customizable Razor templates for different layouts (posts, pages, root template)
 - **File-based Content Management**: Organize content using simple file structure with date-based post naming
