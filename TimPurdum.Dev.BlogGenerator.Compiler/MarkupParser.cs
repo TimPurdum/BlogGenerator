@@ -415,7 +415,7 @@ public static class MarkupParser
                 }
                 else
                 {
-                    pageMetaData = GeneratePageMetaDataFromMarkdown(fileName, content);    
+                    pageMetaData = GeneratePageMetaDataFromMarkdown(fileName, content, page);
                 }
                 
                 pageMetaDatas.Add(pageMetaData);
@@ -429,7 +429,7 @@ public static class MarkupParser
         return pageMetaDatas;
     }
 
-    private static PageMetaData GeneratePageMetaDataFromMarkdown(string fileName, string content)
+    private static PageMetaData GeneratePageMetaDataFromMarkdown(string fileName, string content, string filePath)
     {
         // Extract YAML front-matter using regex
         Match match = Resources.FileRegex.Match(content);
@@ -440,8 +440,8 @@ public static class MarkupParser
         List<string> resultLines = [];
         Dictionary<string, string> razorComponentSections = [];
         List<string> scripts = [];
-        
-        string postContent = ParseMarkdownLines(markdownLines, ref resultLines, 
+
+        string postContent = ParseMarkdownLines(markdownLines, ref resultLines,
             ref razorComponentSections, ref scripts);
 
         FrontMatter frontMatter = FrontMatter.Parse(yaml);
@@ -463,9 +463,14 @@ public static class MarkupParser
             extras[key] = frontMatter.GetString(key);
         }
 
+        // Prefer the page's own `lastmodified` frontmatter (admin keeps it current on every save);
+        // fall back to the source file's mtime so freshly-created pages still get a sitemap date.
+        DateTime? lastModified = frontMatter.GetDateTime("lastmodified") ?? File.GetLastWriteTimeUtc(filePath);
+
         return new PageMetaData(title, subTitle, urlPath, postContent,
             razorComponentSections, scripts, layout, description, navOrder,
-            extras.Count > 0 ? extras : null);
+            extras.Count > 0 ? extras : null,
+            lastModified);
     }
 
     /// <summary>Keys that already flow through dedicated PageMetaData fields and shouldn't be re-emitted as extras.</summary>

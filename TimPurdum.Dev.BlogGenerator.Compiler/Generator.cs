@@ -93,6 +93,12 @@ public static class Generator
         string rssXml = await RssFeedGenerator.GenerateRssFeed(posts);
         string rssFilePath = Path.Combine(BlogSettings.OutputWebRootPath, "feed.xml");
         await File.WriteAllTextAsync(rssFilePath, rssXml);
+
+        // sitemap.xml — covers pages + posts + all typed collections, regenerated on every build so the
+        // sitemap stays in lockstep with the deployed wwwroot regardless of which content changed.
+        string sitemapXml = SitemapGenerator.GenerateSitemap(pages, posts, MusicEntries, ShowEntries, GalleryEntries);
+        string sitemapFilePath = Path.Combine(BlogSettings.OutputWebRootPath, "sitemap.xml");
+        await File.WriteAllTextAsync(sitemapFilePath, sitemapXml);
     }
 
     public static async Task<string> RenderComponent(Dictionary<string, object?> parameters)
