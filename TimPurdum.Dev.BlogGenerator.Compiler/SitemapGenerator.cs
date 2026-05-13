@@ -45,8 +45,9 @@ public static class SitemapGenerator
 
     private static XElement UrlEntry(Uri baseUri, string relativeUrl, DateTime? lastModified)
     {
-        // Url field on metas is extensionless and begins with "/" (except the home page which is "/"
-        // itself). new Uri(baseUri, relativeUrl) joins them correctly for both shapes.
+        // Url field on metas is extensionless and may be either root-relative (beginning with "/")
+        // or a plain relative path (for example, markdown pages use values like "about"). The
+        // home page remains "/". new Uri(baseUri, relativeUrl) joins all of these shapes correctly.
         Uri absolute = new(baseUri, relativeUrl);
 
         XElement entry = new(Ns + "url", new XElement(Ns + "loc", absolute.ToString()));
