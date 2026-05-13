@@ -453,10 +453,24 @@ public static class MarkupParser
         string layout = frontMatter.GetString("layout", "page");
         layout = $"{layout.ToUpperFirstChar()}Layout";
         string description = frontMatter.GetString("description");
-        
-        return new PageMetaData(title, subTitle, urlPath, postContent, 
-            razorComponentSections, scripts, layout, description, navOrder);
+
+        // Forward any non-standard frontmatter fields as ExtraFrontMatter so custom layouts can declare
+        // typed [Parameter] props for arbitrary keys (e.g. heroImage on the home page).
+        Dictionary<string, string> extras = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string key in frontMatter.Keys)
+        {
+            if (StandardPageFrontMatterKeys.Contains(key)) continue;
+            extras[key] = frontMatter.GetString(key);
+        }
+
+        return new PageMetaData(title, subTitle, urlPath, postContent,
+            razorComponentSections, scripts, layout, description, navOrder,
+            extras.Count > 0 ? extras : null);
     }
+
+    /// <summary>Keys that already flow through dedicated PageMetaData fields and shouldn't be re-emitted as extras.</summary>
+    private static readonly HashSet<string> StandardPageFrontMatterKeys =
+        new(StringComparer.OrdinalIgnoreCase) { "title", "subtitle", "description", "layout", "navorder", "lastmodified" };
     
     private static string ParseMarkdownLines(List<string> markdownLines,
         ref List<string> resultLines,
