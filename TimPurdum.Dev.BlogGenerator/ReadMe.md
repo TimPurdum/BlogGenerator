@@ -7,6 +7,7 @@ This project is a Blazor-based static site generator designed to create and mana
 - **Static Site Generation**: Converts Markdown content with YAML front matter into static HTML files
 - **Blazor Component Integration**: Embed interactive Blazor components directly in Markdown content using `blazor-component` code blocks
 - **RSS Feed Generation**: Automatically generates RSS feeds for blog posts
+- **Sitemap Generation**: Emits a sitemaps.org-compliant `sitemap.xml` covering pages, posts, and any configured music/shows/gallery collections
 - **Flexible Template System**: Customizable Razor templates for different layouts (posts, pages, root template)
 - **File-based Content Management**: Organize content using simple file structure with date-based post naming
 - **Interactive Navigation**: Automatic generation of navigation links from content metadata
@@ -28,6 +29,7 @@ The solution consists of three main projects:
   - `MarkupParser.cs`: Parses Markdown files with YAML front matter
   - `RazorGenerator.cs`: Compiles Razor templates at build time
   - `RssFeedGenerator.cs`: Creates RSS feeds from post metadata
+  - `SitemapGenerator.cs`: Creates a sitemap.xml from all content collections
   - `HtmlFileGenerator.cs`: Generates final HTML output
 
 ### TimPurdum.Dev.BlogGenerator.Shared
@@ -126,6 +128,7 @@ The generator integrates into the MSBuild process:
 4. **Component Generation**: Creates Blazor components from embedded code blocks
 5. **HTML Generation**: Renders final static HTML files
 6. **RSS Generation**: Creates RSS feed from post metadata
+7. **Sitemap Generation**: Creates sitemap.xml covering all content collections
 
 ## Dependencies
 
@@ -149,6 +152,7 @@ The generator produces:
 - Static HTML files in the specified output directory
 - Generated Blazor components for embedded interactive elements
 - RSS feed (`feed.xml`)
+- Sitemap (`sitemap.xml`)
 - Maintains original file structure for easy deployment
 
 ## Advanced Features
