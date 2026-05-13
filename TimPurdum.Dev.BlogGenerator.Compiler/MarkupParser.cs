@@ -845,6 +845,6 @@ public static class MarkupParser
         RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex ScriptEndRegex = new("</script>",
         RegexOptions.Compiled | RegexOptions.Singleline);
-    private static readonly Regex BlogSettingsTokenRegex = new(@"@BlogSettings\.(?<prop>[A-Za-z][A-Za-z0-9]*)",
+    private static readonly Regex BlogSettingsTokenRegex = new(@"@BlogSettings\.(?<prop>[A-Za-z][A-Za-z0-9]*)(?![.\(\[])",
         RegexOptions.Compiled);
 }
