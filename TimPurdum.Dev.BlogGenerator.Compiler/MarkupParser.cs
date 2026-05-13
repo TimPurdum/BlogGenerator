@@ -465,7 +465,9 @@ public static class MarkupParser
 
         // Prefer the page's own `lastmodified` frontmatter (admin keeps it current on every save);
         // fall back to the source file's mtime so freshly-created pages still get a sitemap date.
-        DateTime? lastModified = frontMatter.GetDateTime("lastmodified") ?? File.GetLastWriteTimeUtc(filePath);
+        // If the source file is missing, keep this null so sitemap generation can omit `<lastmod>`.
+        DateTime? lastModified = frontMatter.GetDateTime("lastmodified")
+            ?? (File.Exists(filePath) ? File.GetLastWriteTimeUtc(filePath) : null);
 
         return new PageMetaData(title, subTitle, urlPath, postContent,
             razorComponentSections, scripts, layout, description, navOrder,
