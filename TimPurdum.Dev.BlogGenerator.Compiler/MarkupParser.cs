@@ -815,6 +815,8 @@ public static class MarkupParser
     /// and compound forms (<c>&lt;PageTitle&gt;Welcome — @BlogSettings.SiteTitle&lt;/PageTitle&gt;</c>).
     /// Page-local fields, navlinks, and other non-BlogSettings expressions are NOT evaluated; the
     /// parser runs before Razor compilation, so it can't access page-instance state.
+    /// When a matching <see cref="BlogSettings"/> string property exists but its value is <see langword="null"/>,
+    /// the token is replaced with an empty string.
     /// </remarks>
     private static string SubstituteBlogSettingsTokens(string text)
     {
@@ -825,9 +827,9 @@ public static class MarkupParser
         {
             string propName = match.Groups["prop"].Value;
             System.Reflection.PropertyInfo? prop = typeof(BlogSettings).GetProperty(propName);
-            if (prop?.GetValue(settings) is string value)
+            if (prop is not null && prop.PropertyType == typeof(string))
             {
-                return value;
+                return (prop.GetValue(settings) as string) ?? string.Empty;
             }
             return match.Value;
         });
