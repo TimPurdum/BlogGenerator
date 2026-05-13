@@ -118,7 +118,15 @@ public static class Generator
             url: page.Url,
             content: (MarkupString)page.Content,
             scriptTags: page.ScriptTags,
-            extraParameters: null,
+            // Expose the typed collections so custom page layouts (e.g. a HomeLayout that needs upcoming
+            // shows) can declare them as [Parameter] props and have them auto-bound via the existing
+            // BaseRootTemplate reflection trick. Layouts that don't declare these get filtered out.
+            extraParameters: new Dictionary<string, object?>
+            {
+                [nameof(MusicEntries)]   = MusicEntries,
+                [nameof(ShowEntries)]    = ShowEntries,
+                [nameof(GalleryEntries)] = GalleryEntries,
+            },
             renderer, navLinks, rootTemplateType);
 
     private static Task<string> RenderPost(PostMetaData post, HtmlRenderer renderer, List<LinkData> navLinks,
