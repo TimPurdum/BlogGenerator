@@ -1,0 +1,1362 @@
+/* =============================================================
+   BlogGenerator admin
+   Default palette uses CSS custom properties (--admin-*). Consumer sites override via a second stylesheet loaded after this one.
+   ============================================================= */
+
+:root {
+    --admin-bg:           #FAFAF5;
+    --admin-surface:      #FFFFFF;
+    --admin-surface-alt:  #F2EFE6;
+    --admin-text:         #1A1A1A;
+    --admin-muted:        rgba(26, 26, 26, 0.62);
+    --admin-faint:        rgba(26, 26, 26, 0.10);
+    --admin-accent:       #C9A84C;
+    --admin-accent-soft:  rgba(201, 168, 76, 0.40);
+    --admin-accent-veil:  rgba(201, 168, 76, 0.10);
+    --admin-burgundy:     #5C1A1A;
+    --admin-error:        #8A2A2A;
+    --admin-error-veil:   rgba(138, 42, 42, 0.10);
+
+    --font-serif: 'Cormorant Garamond', Georgia, serif;
+    --font-sans:  'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+    --tracking-eyebrow:    0.28em;
+    --tracking-small-caps: 0.14em;
+    --leading-body:        1.55;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --admin-bg:          #0A0A0A;
+        --admin-surface:     #141413;
+        --admin-surface-alt: #1B1A18;
+        --admin-text:        #F5F0E8;
+        --admin-muted:       rgba(245, 240, 232, 0.62);
+        --admin-faint:       rgba(245, 240, 232, 0.10);
+        --admin-accent-soft: rgba(201, 168, 76, 0.45);
+    }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: var(--leading-body);
+    color: var(--admin-text);
+    background: var(--admin-bg);
+    -webkit-font-smoothing: antialiased;
+}
+
+img, svg { display: block; max-width: 100%; height: auto; }
+button, input, textarea, select { font: inherit; color: inherit; }
+
+::selection { background: var(--admin-accent); color: var(--admin-bg); }
+
+:focus-visible {
+    outline: 2px solid var(--admin-accent);
+    outline-offset: 2px;
+}
+
+a {
+    color: var(--admin-burgundy);
+    text-decoration-color: var(--admin-accent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+}
+a:hover { color: var(--admin-accent); }
+@media (prefers-color-scheme: dark) {
+    a { color: var(--admin-accent); }
+}
+
+.splash {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--admin-muted);
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 1.25rem;
+}
+
+/* --- shell ------------------------------------------------- */
+
+.admin-shell {
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+}
+.admin-shell--unauth {
+    align-items: center;
+    justify-items: center;
+    grid-template-rows: 1fr;
+    padding: 2rem 1.5rem;
+}
+
+.admin-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1.5rem;
+    align-items: center;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid var(--admin-accent-soft);
+    background: var(--admin-surface);
+}
+.admin-brand {
+    font-family: var(--font-serif);
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: var(--admin-text);
+    text-decoration: none;
+    letter-spacing: 0.005em;
+}
+.admin-brand:hover { color: var(--admin-burgundy); }
+
+.admin-nav {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+.admin-nav__link {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-small-caps);
+    color: var(--admin-muted);
+    text-decoration: none;
+    padding: 0.5rem 0.85rem;
+    border-radius: 1px;
+    transition: color 180ms ease, background 180ms ease;
+}
+.admin-nav__link:hover {
+    color: var(--admin-text);
+    background: var(--admin-accent-veil);
+}
+.admin-nav__link.active {
+    color: var(--admin-text);
+    background: var(--admin-accent-veil);
+    box-shadow: inset 0 -2px 0 var(--admin-accent);
+}
+
+.admin-user {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+}
+.admin-user__name {
+    font-weight: 500;
+    color: var(--admin-text);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+}
+
+.admin-main {
+    padding: 2.5rem 2rem 4rem;
+    max-width: 80rem;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.admin-footer {
+    padding: 1.25rem 2rem;
+    border-top: 1px solid var(--admin-faint);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    color: var(--admin-muted);
+    background: var(--admin-surface);
+}
+.admin-footer a { color: var(--admin-accent); }
+
+@media (max-width: 720px) {
+    .admin-header {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+        padding: 1rem 1.25rem;
+    }
+    .admin-main { padding: 1.5rem 1.25rem 3rem; }
+}
+
+/* --- buttons ----------------------------------------------- */
+
+.admin-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-small-caps);
+    padding: 0.65rem 1.25rem;
+    background: var(--admin-accent);
+    color: #1A1A1A;
+    border: 1px solid var(--admin-accent);
+    cursor: pointer;
+    text-decoration: none;
+    line-height: 1;
+    transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+.admin-button:hover {
+    background: var(--admin-burgundy);
+    border-color: var(--admin-burgundy);
+    color: #FAFAF5;
+    transform: translateY(-1px);
+}
+.admin-button:active { transform: none; }
+.admin-button:disabled,
+.admin-button[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+}
+.admin-button--ghost {
+    background: transparent;
+    color: var(--admin-text);
+    border-color: var(--admin-accent-soft);
+}
+.admin-button--ghost:hover {
+    background: var(--admin-accent-veil);
+    border-color: var(--admin-accent);
+    color: var(--admin-text);
+}
+@media (prefers-color-scheme: dark) {
+    .admin-button { color: #0A0A0A; }
+    .admin-button:hover { color: #F5F0E8; }
+}
+
+/* --- page heading ------------------------------------------ */
+
+.page-heading {
+    margin-bottom: 2.5rem;
+}
+.page-heading h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(1.875rem, 3.5vw, 2.5rem);
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.005em;
+    margin-bottom: 0.4rem;
+}
+.page-heading__lede {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 1.125rem;
+    color: var(--admin-muted);
+    line-height: 1.4;
+}
+.section-title {
+    font-family: var(--font-serif);
+    font-size: 1.375rem;
+    font-weight: 500;
+    margin: 2.5rem 0 1rem;
+    letter-spacing: -0.005em;
+}
+
+/* --- dashboard counts -------------------------------------- */
+
+.counts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 3rem;
+}
+.count-tile {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 0.4rem;
+    padding: 1.5rem 1.5rem 1.25rem;
+    background: var(--admin-surface);
+    border: 1px solid var(--admin-accent-soft);
+    border-top: 3px solid var(--admin-accent);
+    color: inherit;
+    text-decoration: none;
+    transition: transform 220ms ease, border-color 220ms ease, background 220ms ease;
+}
+.count-tile:hover {
+    transform: translateY(-2px);
+    border-color: var(--admin-burgundy);
+    border-top-color: var(--admin-burgundy);
+}
+.count-tile:hover .count-tile__value { color: var(--admin-burgundy); }
+@media (prefers-color-scheme: dark) {
+    .count-tile:hover .count-tile__value { color: var(--admin-accent); }
+}
+.count-tile__label {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--admin-accent);
+}
+.count-tile__value {
+    font-family: var(--font-serif);
+    font-size: 3rem;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--admin-text);
+    transition: color 220ms ease;
+    font-feature-settings: 'lnum' 1;
+}
+.count-tile__hint {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 0.95rem;
+    color: var(--admin-muted);
+}
+
+.quick-actions__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+.quick-actions__note {
+    font-family: var(--font-serif);
+    font-style: italic;
+    color: var(--admin-muted);
+    font-size: 0.9375rem;
+}
+
+/* --- alerts ------------------------------------------------ */
+
+.alert {
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--admin-accent-soft);
+    background: var(--admin-surface);
+    margin-bottom: 1.5rem;
+}
+.alert--error {
+    border-color: var(--admin-error);
+    background: var(--admin-error-veil);
+    color: var(--admin-error);
+}
+.alert--error strong { color: var(--admin-error); }
+.alert button { margin-top: 0.75rem; }
+
+.empty {
+    font-family: var(--font-serif);
+    font-style: italic;
+    color: var(--admin-muted);
+    padding: 2rem 0;
+}
+
+.alert .admin-button { margin-top: 0.75rem; margin-right: 0.5rem; }
+.alert p + p { margin-top: 0.5rem; }
+.alert code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--admin-accent-veil);
+    padding: 0.05em 0.35em;
+    border-radius: 2px;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* --- page heading row (heading + action button) ----------- */
+
+.page-heading__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
+}
+
+/* --- content table ---------------------------------------- */
+
+.content-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-sans);
+    background: var(--admin-surface);
+    border: 1px solid var(--admin-accent-soft);
+}
+.content-table thead th {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--admin-accent);
+    text-align: left;
+    padding: 0.85rem 1rem;
+    border-bottom: 2px solid var(--admin-accent);
+    background: var(--admin-surface-alt);
+}
+.content-table tbody td {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--admin-faint);
+    vertical-align: middle;
+}
+.content-table tbody tr:last-child td { border-bottom: none; }
+.content-table__row:hover { background: var(--admin-accent-veil); }
+
+.content-table__date {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--admin-muted);
+    white-space: nowrap;
+    width: 11rem;
+}
+.content-table__slug {
+    font-family: var(--font-serif);
+}
+.content-table__title {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    color: var(--admin-text);
+    text-decoration: none;
+    background: none;
+}
+.content-table__title:hover { color: var(--admin-burgundy); }
+@media (prefers-color-scheme: dark) {
+    .content-table__title:hover { color: var(--admin-accent); }
+}
+
+.content-table__actions {
+    text-align: right;
+    white-space: nowrap;
+    width: 1%;
+}
+.content-table__actions .admin-button + .admin-button { margin-left: 0.4rem; }
+
+.content-table__count {
+    margin-top: 1rem;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    color: var(--admin-muted);
+    text-align: right;
+}
+
+@media (max-width: 720px) {
+    .content-table thead { display: none; }
+    .content-table,
+    .content-table tbody,
+    .content-table tr,
+    .content-table td { display: block; width: auto; }
+    .content-table__row {
+        padding: 1rem;
+        border-bottom: 1px solid var(--admin-faint);
+    }
+    .content-table__row td {
+        padding: 0.2rem 0;
+        border: none;
+    }
+    .content-table__date { width: auto; }
+    .content-table__actions { text-align: left; padding-top: 0.6rem; }
+}
+
+/* --- inline confirmation row ------------------------------ */
+
+.confirm-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.confirm-row__prompt {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 0.9375rem;
+    color: var(--admin-error);
+}
+
+/* --- button size + danger variant ------------------------- */
+
+.admin-button--small {
+    padding: 0.42rem 0.85rem;
+    font-size: 0.6875rem;
+    letter-spacing: var(--tracking-eyebrow);
+}
+.admin-button--danger {
+    background: var(--admin-error);
+    border-color: var(--admin-error);
+    color: var(--admin-bg);
+}
+.admin-button--danger:hover {
+    background: var(--admin-burgundy);
+    border-color: var(--admin-burgundy);
+}
+
+/* --- help page -------------------------------------------- */
+
+.help {
+    max-width: 48rem;
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    color: var(--admin-text);
+}
+.help__section { margin-bottom: 1.75rem; }
+.help h2 {
+    font-family: var(--font-serif);
+    font-size: 1.5rem;
+    font-weight: 500;
+    margin: 0 0 0.85rem;
+    letter-spacing: -0.005em;
+}
+.help p { margin: 0 0 1rem; }
+.help ol, .help ul {
+    padding-left: 1.5rem;
+    margin: 0 0 1rem;
+}
+.help li { margin-bottom: 0.4rem; }
+.help code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--admin-accent-veil);
+    padding: 0.05em 0.4em;
+    border-radius: 2px;
+}
+.help a { color: var(--admin-burgundy); text-decoration-color: var(--admin-accent); }
+.help a:hover { color: var(--admin-accent); }
+.help hr {
+    border: none;
+    border-top: 1px solid var(--admin-accent-soft);
+    margin: 1.75rem 0;
+    max-width: 4rem;
+}
+.help__dl {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem 0;
+    margin: 0 0 1rem;
+}
+.help__dl dt {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    color: var(--admin-text);
+    margin-top: 0.5rem;
+}
+.help__dl dd {
+    margin: 0 0 0.4rem;
+    color: var(--admin-muted);
+}
+.help__warning {
+    background: var(--admin-accent-veil);
+    border-left: 2px solid var(--admin-accent);
+    padding: 0.85rem 1.1rem;
+    font-style: italic;
+    color: var(--admin-text);
+}
+@media (min-width: 720px) {
+    .help__dl { grid-template-columns: 14rem 1fr; gap: 0.6rem 1.5rem; }
+    .help__dl dt { margin-top: 0; }
+}
+
+/* --- image picker (modal) --------------------------------- */
+
+.image-picker-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 10, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    z-index: 300;
+    animation: image-picker-fade-in 200ms ease-out;
+}
+.image-picker {
+    background: var(--admin-surface);
+    border-left: 3px solid var(--admin-accent);
+    max-width: 56rem;
+    max-height: 85vh;
+    width: 100%;
+    overflow: auto;
+    padding: 1.75rem 2rem 1.5rem;
+    position: relative;
+    box-shadow: 0 12px 40px rgba(10, 10, 10, 0.25);
+}
+.image-picker__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--admin-faint);
+    margin-bottom: 1.25rem;
+}
+.image-picker__title {
+    font-family: var(--font-serif);
+    font-size: 1.5rem;
+    font-weight: 500;
+}
+.image-picker__close {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--admin-muted);
+    padding: 0.2rem 0.5rem;
+}
+.image-picker__close:hover { color: var(--admin-text); }
+.image-picker__folder {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+.image-picker__folder .form-input { width: auto; min-width: 12rem; }
+.image-picker__upload,
+.image-picker__browse {
+    margin-bottom: 1.5rem;
+}
+.image-picker__subtitle {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--admin-accent);
+    margin-bottom: 0.5rem;
+}
+.image-picker__error {
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    color: var(--admin-error);
+    margin-top: 0.5rem;
+}
+.image-picker__grid {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.85rem;
+}
+.image-picker__tile { margin: 0; }
+.image-picker__select {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    padding: 0.4rem;
+    background: var(--admin-bg);
+    border: 1px solid var(--admin-faint);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    transition: border-color 180ms ease, transform 180ms ease;
+}
+.image-picker__select:hover {
+    border-color: var(--admin-accent);
+    transform: translateY(-1px);
+}
+.image-picker__select img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+}
+.image-picker__name {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--admin-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.image-picker__busy {
+    position: absolute;
+    inset: auto 1rem 1rem auto;
+    padding: 0.5rem 0.85rem;
+    background: var(--admin-accent-veil);
+    color: var(--admin-text);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+}
+
+@keyframes image-picker-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* --- form input + picker combo + preview ------------------ */
+
+.form-input-with-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.6rem;
+}
+.form-input-with-picker > .form-input { flex: 1 1 16rem; }
+.form-input__preview {
+    margin: 0;
+    flex: 0 0 auto;
+}
+.form-input__preview img {
+    width: 4rem;
+    height: 4rem;
+    object-fit: cover;
+    border: 1px solid var(--admin-accent-soft);
+}
+
+/* --- image library page ----------------------------------- */
+
+.image-library {
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: 1fr;
+}
+@media (min-width: 720px) {
+    .image-library { grid-template-columns: 14rem 1fr; }
+}
+
+.image-library__sidebar-title {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--admin-accent);
+    margin-bottom: 0.6rem;
+}
+.image-library__folders {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.75rem;
+    display: flex;
+    flex-direction: column;
+}
+.image-library__folder {
+    background: transparent;
+    border: none;
+    text-align: left;
+    padding: 0.55rem 0.85rem;
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    color: var(--admin-text);
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background 160ms ease, border-color 160ms ease;
+}
+.image-library__folder:hover { background: var(--admin-accent-veil); }
+.image-library__folder--active {
+    background: var(--admin-accent-veil);
+    border-left-color: var(--admin-accent);
+    color: var(--admin-text);
+}
+
+.image-library__upload {
+    border-top: 1px solid var(--admin-faint);
+    padding-top: 1rem;
+}
+.image-library__upload .form-row__hint { margin-top: 0.4rem; }
+
+.image-library__grid {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1.25rem;
+}
+.image-library__tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.65rem;
+    background: var(--admin-surface);
+    border: 1px solid var(--admin-accent-soft);
+}
+.image-library__figure {
+    margin: 0;
+}
+.image-library__figure img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    background: var(--admin-faint);
+}
+.image-library__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-height: 2.25rem;
+}
+.image-library__name {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--admin-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.image-library__size {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    color: var(--admin-muted);
+    letter-spacing: 0.05em;
+}
+.image-library__actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.image-library__copied {
+    margin-top: 1rem;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    color: var(--admin-accent);
+}
+.image-library__copied code {
+    font-family: var(--font-mono);
+    background: var(--admin-accent-veil);
+    padding: 0.05em 0.35em;
+    border-radius: 2px;
+}
+
+/* --- deploy banner (fixed bottom-of-page status strip) ---- */
+
+.deploy-banner {
+    position: fixed;
+    inset: auto 1.5rem 1.5rem 1.5rem;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1.1rem;
+    background: var(--admin-surface);
+    border-left: 3px solid var(--admin-accent);
+    box-shadow: 0 6px 20px rgba(10, 10, 10, 0.18);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    color: var(--admin-text);
+    animation: deploy-banner-rise 280ms ease-out;
+}
+.deploy-banner__icon {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    line-height: 1;
+    width: 1.4rem;
+    text-align: center;
+    color: var(--admin-accent);
+}
+.deploy-banner__text { flex: 1; min-width: 0; }
+.deploy-banner__action {
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-small-caps);
+    color: var(--admin-accent);
+    text-decoration: none;
+    white-space: nowrap;
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--admin-accent);
+    transition: background 200ms ease, color 200ms ease;
+}
+.deploy-banner__action:hover {
+    background: var(--admin-accent);
+    color: var(--admin-bg);
+}
+.deploy-banner__dismiss {
+    background: transparent;
+    border: none;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--admin-muted);
+    padding: 0.2rem 0.4rem;
+}
+.deploy-banner__dismiss:hover { color: var(--admin-text); }
+
+.deploy-banner--running {
+    border-left-color: var(--admin-accent);
+}
+.deploy-banner--running .deploy-banner__icon {
+    animation: deploy-banner-spin 1.6s linear infinite;
+    color: var(--admin-accent);
+}
+.deploy-banner--success {
+    border-left-color: #2A8A3A;
+}
+.deploy-banner--success .deploy-banner__icon { color: #2A8A3A; }
+.deploy-banner--error {
+    border-left-color: var(--admin-error);
+}
+.deploy-banner--error .deploy-banner__icon { color: var(--admin-error); }
+
+@keyframes deploy-banner-rise {
+    from { transform: translateY(120%); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+}
+@keyframes deploy-banner-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+@media (min-width: 720px) {
+    .deploy-banner {
+        inset: auto auto 1.5rem 1.5rem;
+        max-width: 32rem;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .deploy-banner { animation: none; }
+    .deploy-banner--running .deploy-banner__icon { animation: none; }
+}
+
+/* --- editor (forms + fieldsets) --------------------------- */
+
+.editor {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+}
+.editor-fieldset {
+    border: 1px solid var(--admin-accent-soft);
+    background: var(--admin-surface);
+    padding: 1.5rem 1.5rem 1.25rem;
+}
+.editor-fieldset__legend {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--admin-accent);
+    padding: 0 0.5rem;
+}
+.editor-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    align-items: center;
+}
+@media (max-width: 720px) {
+    .editor-actions { flex-direction: column-reverse; align-items: stretch; }
+    .editor-actions .admin-button { width: 100%; }
+}
+
+code.path {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--admin-accent-veil);
+    padding: 0.05em 0.35em;
+    border-radius: 2px;
+    word-break: break-all;
+}
+
+/* --- form rows -------------------------------------------- */
+
+.form-grid {
+    display: grid;
+    gap: 1.1rem;
+}
+.form-row {
+    display: grid;
+    gap: 0.4rem;
+}
+.form-row__label {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--admin-accent);
+}
+.form-row__required {
+    color: var(--admin-burgundy);
+    margin-left: 0.15em;
+}
+.form-row__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.form-row__hint {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 0.875rem;
+    color: var(--admin-muted);
+    line-height: 1.4;
+}
+
+.form-input {
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    padding: 0.7rem 0.9rem;
+    background: var(--admin-bg);
+    color: var(--admin-text);
+    border: 1px solid var(--admin-accent-soft);
+    border-radius: 1px;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+    width: 100%;
+}
+.form-input:focus {
+    border-color: var(--admin-accent);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--admin-accent-veil);
+}
+textarea.form-input {
+    resize: vertical;
+    min-height: 5rem;
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    line-height: 1.55;
+}
+select.form-input { cursor: pointer; }
+
+@media (min-width: 720px) {
+    .form-grid {
+        grid-template-columns: 12rem 1fr;
+        gap: 1rem 2rem;
+    }
+    .form-row {
+        display: contents;
+    }
+    .form-row__label {
+        align-self: start;
+        padding-top: 0.85rem;
+    }
+}
+
+/* --- rich text editor (Toast UI host) -------------------- */
+
+.md-editor-host {
+    /* Toast UI's stylesheet handles the editor chrome. We just give it a thin gold accent so it
+       feels like the rest of the admin. */
+    border: 1px solid var(--admin-accent-soft);
+}
+.md-editor-host .toastui-editor-defaultUI {
+    border: none !important;
+}
+.md-editor-host .toastui-editor-toolbar {
+    border-bottom: 1px solid var(--admin-accent-soft) !important;
+    background: var(--admin-surface) !important;
+}
+.md-editor-host .toastui-editor-mode-switch {
+    border-top: 1px solid var(--admin-accent-soft) !important;
+    background: var(--admin-surface) !important;
+}
+
+/* Toast UI 3.x doesn't ship a dark theme, so we paint over its hard-coded light colors in dark mode.
+   Scoped to .md-editor-host so we don't leak overrides into any other Toast UI instance. */
+@media (prefers-color-scheme: dark) {
+    .md-editor-host .toastui-editor-defaultUI {
+        background: var(--admin-surface) !important;
+        color: var(--admin-text) !important;
+    }
+    .md-editor-host .toastui-editor-main,
+    .md-editor-host .toastui-editor-main-container,
+    .md-editor-host .toastui-editor-md-container,
+    .md-editor-host .toastui-editor-ww-container,
+    .md-editor-host .toastui-editor-md-preview {
+        background: var(--admin-bg) !important;
+        color: var(--admin-text) !important;
+    }
+    .md-editor-host .toastui-editor-md-splitter {
+        background: var(--admin-accent-soft) !important;
+    }
+    /* Markdown source pane — actual editable content (ProseMirror node). */
+    .md-editor-host .toastui-editor-contents,
+    .md-editor-host .toastui-editor-md-mode .ProseMirror,
+    .md-editor-host .toastui-editor-ww-mode .ProseMirror {
+        background: var(--admin-bg) !important;
+        color: var(--admin-text) !important;
+        caret-color: var(--admin-accent);
+    }
+    /* Markdown syntax highlighting — Toast UI's md-* classes have hard-coded near-black text. */
+    .md-editor-host .toastui-editor-md-heading,
+    .md-editor-host .toastui-editor-md-link,
+    .md-editor-host .toastui-editor-md-link-desc,
+    .md-editor-host .toastui-editor-md-link-url,
+    .md-editor-host .toastui-editor-md-list-item-style,
+    .md-editor-host .toastui-editor-md-delimiter,
+    .md-editor-host .toastui-editor-md-meta,
+    .md-editor-host .toastui-editor-md-marked-text,
+    .md-editor-host .toastui-editor-md-block-quote,
+    .md-editor-host .toastui-editor-md-table,
+    .md-editor-host .toastui-editor-md-table-cell,
+    .md-editor-host .toastui-editor-md-thematic-break,
+    .md-editor-host .toastui-editor-md-html,
+    .md-editor-host .toastui-editor-md-emph,
+    .md-editor-host .toastui-editor-md-list-item {
+        color: var(--admin-text) !important;
+    }
+    .md-editor-host .toastui-editor-md-code,
+    .md-editor-host .toastui-editor-md-code-block {
+        color: var(--admin-accent) !important;
+    }
+    /* Code-block backdrop in the markdown pane. */
+    .md-editor-host .toastui-editor-md-code-block-line-background,
+    .md-editor-host .toastui-editor-md-custom-block-line-background {
+        background: var(--admin-surface-alt) !important;
+    }
+    /* Toolbar buttons. */
+    .md-editor-host .toastui-editor-toolbar-icons {
+        filter: invert(0.85) hue-rotate(180deg);
+    }
+    .md-editor-host .toastui-editor-toolbar-divider {
+        background: var(--admin-accent-soft) !important;
+    }
+    /* Mode-switch tabs at the bottom. */
+    .md-editor-host .toastui-editor-mode-switch .tab-item {
+        background: var(--admin-surface) !important;
+        color: var(--admin-muted) !important;
+        border-color: var(--admin-accent-soft) !important;
+    }
+    .md-editor-host .toastui-editor-mode-switch .tab-item.active {
+        background: var(--admin-bg) !important;
+        color: var(--admin-text) !important;
+        border-top: 2px solid var(--admin-accent) !important;
+    }
+    /* Popups (image / link / heading dialogs). */
+    .md-editor-host .toastui-editor-popup,
+    .md-editor-host .toastui-editor-popup-body,
+    .md-editor-host .toastui-editor-dropdown-toolbar {
+        background: var(--admin-surface) !important;
+        color: var(--admin-text) !important;
+        border-color: var(--admin-accent-soft) !important;
+    }
+    .md-editor-host .toastui-editor-popup input[type="text"],
+    .md-editor-host .toastui-editor-popup textarea {
+        background: var(--admin-bg) !important;
+        color: var(--admin-text) !important;
+        border: 1px solid var(--admin-accent-soft) !important;
+    }
+    /* Preview pane (right side in vertical split). */
+    .md-editor-host .toastui-editor-md-preview .toastui-editor-contents {
+        background: var(--admin-bg) !important;
+        color: var(--admin-text) !important;
+    }
+    /* Toast UI hard-codes `color: #222` on the actual text elements inside .toastui-editor-contents
+       (p, h1–h6, table, th, ul, ol, blockquote, strong, em, ...). Element-level color wins per-element
+       over our class-level color even with !important — color isn't inherited when the child has its
+       own rule. So we have to re-color every node that holds text in both the WYSIWYG pane and the
+       preview pane. Same selector covers both because both surfaces share .toastui-editor-contents. */
+    .md-editor-host .toastui-editor-contents p,
+    .md-editor-host .toastui-editor-contents h1,
+    .md-editor-host .toastui-editor-contents h2,
+    .md-editor-host .toastui-editor-contents h3,
+    .md-editor-host .toastui-editor-contents h4,
+    .md-editor-host .toastui-editor-contents h5,
+    .md-editor-host .toastui-editor-contents h6,
+    .md-editor-host .toastui-editor-contents ul,
+    .md-editor-host .toastui-editor-contents ol,
+    .md-editor-host .toastui-editor-contents li,
+    .md-editor-host .toastui-editor-contents table,
+    .md-editor-host .toastui-editor-contents th,
+    .md-editor-host .toastui-editor-contents td,
+    .md-editor-host .toastui-editor-contents th p,
+    .md-editor-host .toastui-editor-contents blockquote,
+    .md-editor-host .toastui-editor-contents blockquote ul,
+    .md-editor-host .toastui-editor-contents strong,
+    .md-editor-host .toastui-editor-contents em,
+    .md-editor-host .toastui-editor-contents span,
+    .md-editor-host .toastui-editor-contents del {
+        color: var(--admin-text) !important;
+    }
+    .md-editor-host .toastui-editor-contents blockquote {
+        border-left-color: var(--admin-accent-soft) !important;
+    }
+    /* Tables: Toast UI gives <th> a #555 background with white text — keep the contrast inverted in dark
+       mode (lighter header band on dark surface). */
+    .md-editor-host .toastui-editor-contents table {
+        border-color: var(--admin-accent-soft) !important;
+    }
+    .md-editor-host .toastui-editor-contents th,
+    .md-editor-host .toastui-editor-contents td {
+        border-color: var(--admin-accent-soft) !important;
+    }
+    .md-editor-host .toastui-editor-contents th {
+        background-color: var(--admin-surface-alt) !important;
+    }
+    /* Links keep the gold accent (override Toast UI's blue).
+       Also override inline descendants (strong, em, span, del inside a link)
+       so formatted link text isn't stuck at --admin-text. */
+    .md-editor-host .toastui-editor-contents a,
+    .md-editor-host .toastui-editor-contents a * {
+        color: var(--admin-accent) !important;
+    }
+    /* Inline code + fenced blocks inside the preview/WYSIWYG content. */
+    .md-editor-host .toastui-editor-contents pre,
+    .md-editor-host .toastui-editor-contents pre code,
+    .md-editor-host .toastui-editor-contents code {
+        background-color: var(--admin-surface-alt) !important;
+        color: var(--admin-accent) !important;
+    }
+}
+
+/* --- image list (gallery editor) -------------------------- */
+
+.image-list {
+    border: 1px solid var(--admin-accent-soft);
+    background: var(--admin-surface);
+    padding: 1.25rem 1.5rem 1.5rem;
+}
+.image-list__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--admin-faint);
+    padding-bottom: 0.75rem;
+}
+.image-list__title {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    font-weight: 500;
+}
+.image-list__items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.image-list__item {
+    display: grid;
+    grid-template-columns: 2.5rem 1fr auto;
+    gap: 0.75rem;
+    align-items: start;
+    padding: 0.85rem;
+    background: var(--admin-bg);
+    border: 1px solid var(--admin-faint);
+}
+.image-list__index {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--admin-muted);
+    text-align: center;
+    padding-top: 0.85rem;
+}
+.image-list__fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.image-list__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.image-list__actions .admin-button {
+    min-width: 2.5rem;
+    padding-inline: 0.5rem;
+}
+@media (max-width: 720px) {
+    .image-list__item { grid-template-columns: 2rem 1fr; grid-template-rows: auto auto; }
+    .image-list__actions { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; }
+}
+
+/* --- login ------------------------------------------------- */
+
+.login {
+    width: 100%;
+    max-width: 32rem;
+    background: var(--admin-surface);
+    padding: 2.5rem 2.5rem 2rem;
+    border: 1px solid var(--admin-accent-soft);
+    border-top: 3px solid var(--admin-accent);
+}
+.login__header { margin-bottom: 1.75rem; }
+.login__title {
+    font-family: var(--font-serif);
+    font-size: 2rem;
+    font-weight: 500;
+    line-height: 1.1;
+    margin-bottom: 0.6rem;
+    letter-spacing: -0.005em;
+}
+.login__lede {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 1.0625rem;
+    color: var(--admin-muted);
+    line-height: 1.45;
+}
+.login__lede code {
+    font-family: var(--font-mono);
+    font-style: normal;
+    font-size: 0.92em;
+    background: var(--admin-accent-veil);
+    padding: 0.05em 0.35em;
+    border-radius: 2px;
+}
+
+.login__form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-bottom: 1.5rem;
+}
+.login__label {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--admin-accent);
+}
+.login__input {
+    font-family: var(--font-mono);
+    font-size: 0.9375rem;
+    padding: 0.85rem 1rem;
+    background: var(--admin-bg);
+    color: var(--admin-text);
+    border: 1px solid var(--admin-accent-soft);
+    border-radius: 1px;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.login__input:focus {
+    border-color: var(--admin-accent);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--admin-accent-veil);
+}
+.login__error {
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    color: var(--admin-error);
+    margin-top: 0.5rem;
+}
+
+.login__help {
+    border-top: 1px solid var(--admin-faint);
+    padding-top: 1.25rem;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    color: var(--admin-muted);
+}
+.login__help summary {
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-small-caps);
+    color: var(--admin-accent);
+    margin-bottom: 0.75rem;
+}
+.login__help ol {
+    padding-left: 1.25rem;
+    line-height: 1.6;
+}
+.login__help li { margin-bottom: 0.4rem; }
+.login__help code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--admin-accent-veil);
+    padding: 0.05em 0.35em;
+    border-radius: 2px;
+}

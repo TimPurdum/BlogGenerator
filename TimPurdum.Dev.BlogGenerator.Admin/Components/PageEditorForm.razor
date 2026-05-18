@@ -1,0 +1,51 @@
+@using TimPurdum.Dev.BlogGenerator.Admin.FrontMatter
+@* Default Page frontmatter form. Hero fields appear when Layout=="home" so consumer sites
+   that ship a HomeLayout can pick the figure image from their image library. *@
+
+<div class="form-grid">
+    <FormRow Label="Title" Required="true" For="page-title"
+             Hint="Used in the browser tab and the OG title tag.">
+        <input id="page-title" class="form-input" type="text" required @bind="Frontmatter.Title" />
+    </FormRow>
+    <FormRow Label="Subtitle" For="page-subtitle"
+             Hint="On a home layout this typically becomes an eyebrow above the hero name.">
+        <input id="page-subtitle" class="form-input" type="text" @bind="Frontmatter.Subtitle" />
+    </FormRow>
+    <FormRow Label="Description" For="page-description"
+             Hint="Optional, used for OG description.">
+        <textarea id="page-description" class="form-input" rows="3" @bind="Frontmatter.Description"></textarea>
+    </FormRow>
+    <FormRow Label="Layout" For="page-layout"
+             Hint="Determines which Razor layout template renders the page on the public site. Stick with the existing value unless you know you want to change it.">
+        <input id="page-layout" class="form-input" type="text" @bind="Frontmatter.Layout" />
+    </FormRow>
+    @if (Frontmatter.Layout == "home")
+    {
+        <FormRow Label="Hero image" For="page-hero-image"
+                 Hint="Optional figure image for the home layout. Pick or upload, or paste a path.">
+            <div class="form-input-with-picker">
+                <input id="page-hero-image" class="form-input" type="text"
+                       @bind="Frontmatter.HeroImage"
+                       placeholder="/images/hero/something.jpg" />
+                <ImagePicker DefaultFolder="hero"
+                             OnPicked="@(url => Frontmatter.HeroImage = url)"
+                             ButtonLabel="Pick / upload" />
+                @if (!string.IsNullOrWhiteSpace(Frontmatter.HeroImage))
+                {
+                    <figure class="form-input__preview">
+                        <img src="@Frontmatter.HeroImage" alt="" loading="lazy" />
+                    </figure>
+                }
+            </div>
+        </FormRow>
+        <FormRow Label="Hero image alt" For="page-hero-alt"
+                 Hint="Screen-reader description of the hero image — short phrase, not a caption.">
+            <input id="page-hero-alt" class="form-input" type="text"
+                   @bind="Frontmatter.HeroImageAlt" />
+        </FormRow>
+    }
+</div>
+
+@code {
+    [Parameter] public required PageFrontMatter Frontmatter { get; set; }
+}

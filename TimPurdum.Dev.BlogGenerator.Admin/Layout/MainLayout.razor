@@ -1,0 +1,56 @@
+@inherits LayoutComponentBase
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject ContentTypeRegistry Registry
+@inject BlogAdminOptions Options
+@implements IDisposable
+
+@if (!Auth.IsAuthenticated)
+{
+    <div class="admin-shell admin-shell--unauth">
+        <Login />
+    </div>
+}
+else
+{
+    <div class="admin-shell">
+        <header class="admin-header">
+            <a class="admin-brand" href="/admin/">@Options.SiteName &mdash; admin</a>
+            <nav class="admin-nav">
+                <NavLink class="admin-nav__link" href="/admin/" Match="NavLinkMatch.All">Dashboard</NavLink>
+                @foreach (IContentTypeDescriptor descriptor in Registry.All)
+                {
+                    <NavLink class="admin-nav__link" href="@($"/admin/{descriptor.Slug}")">@descriptor.DisplayName</NavLink>
+                }
+                <NavLink class="admin-nav__link" href="/admin/images">Images</NavLink>
+                <NavLink class="admin-nav__link" href="/admin/help">Help</NavLink>
+            </nav>
+            <div class="admin-user">
+                @if (Auth.User is { } user)
+                {
+                    <span class="admin-user__name">@user.Login</span>
+                }
+                <button class="admin-button admin-button--ghost" @onclick="LogoutAsync">Sign out</button>
+            </div>
+        </header>
+        <main class="admin-main">
+            @Body
+        </main>
+        <footer class="admin-footer">
+            <a href="/" target="_blank" rel="noopener">View public site &rarr;</a>
+        </footer>
+        <DeployBanner />
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Auth.OnChanged += StateHasChanged;
+
+    private async Task LogoutAsync()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/admin/", forceLoad: false);
+    }
+
+    public void Dispose() => Auth.OnChanged -= StateHasChanged;
+}

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <GeneratePackageOnBuild Condition="'$(Configuration)' == 'RELEASE'">true</GeneratePackageOnBuild>
+        <Title>Blazor Blog Admin</Title>
+        <Description>A reusable Blazor WebAssembly admin for editing markdown content + images on
+            BlogGenerator-powered static sites via the GitHub Contents API. Consumer sites register
+            their content types (Post + Page are built in) and get the full editor, list pages, image
+            library, and deploy banner.</Description>
+        <PackageTags>Blazor;Blog;Admin;CMS;WebAssembly;GitHub</PackageTags>
+        <PackageVersion>1.2.0-preview</PackageVersion>
+        <Version>1.2.0-preview</Version>
+        <Authors>Tim Purdum</Authors>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/TimPurdum/BlogGenerator</RepositoryUrl>
+        <PackageReadmeFile>ReadMe.md</PackageReadmeFile>
+        <AssemblyName>TimPurdum.Dev.BlogGenerator.Admin</AssemblyName>
+        <RootNamespace>TimPurdum.Dev.BlogGenerator.Admin</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <SupportedPlatform Include="browser" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.1" />
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.1" />
+        <PackageReference Include="YamlDotNet" Version="16.3.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="ReadMe.md" Pack="true" PackagePath="" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,60 @@
+@inject DeployStatusService Deploy
+@implements IDisposable
+
+@if (Deploy.State != DeployState.Idle)
+{
+    <div class="deploy-banner @StateClass" role="status" aria-live="polite">
+        <span class="deploy-banner__icon" aria-hidden="true">@Icon</span>
+        <span class="deploy-banner__text">@Message</span>
+        @if (Deploy.State == DeployState.Success && !string.IsNullOrEmpty(Deploy.ViewLiveUrl))
+        {
+            <a class="deploy-banner__action" href="@CacheBust(Deploy.ViewLiveUrl, Deploy.CommitSha)" target="_blank" rel="noopener">View live &rarr;</a>
+        }
+        @if (Deploy.State is DeployState.Failure or DeployState.Timeout && !string.IsNullOrEmpty(Deploy.RunUrl))
+        {
+            <a class="deploy-banner__action" href="@Deploy.RunUrl" target="_blank" rel="noopener">View log &rarr;</a>
+        }
+        <button class="deploy-banner__dismiss" @onclick="Dismiss" aria-label="Dismiss">×</button>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Deploy.Changed += StateHasChanged;
+
+    private string StateClass => Deploy.State switch
+    {
+        DeployState.Pending or DeployState.Running => "deploy-banner--running",
+        DeployState.Success                        => "deploy-banner--success",
+        DeployState.Failure or DeployState.Timeout => "deploy-banner--error",
+        _ => ""
+    };
+
+    private string Icon => Deploy.State switch
+    {
+        DeployState.Pending or DeployState.Running => "○",
+        DeployState.Success                        => "✓",
+        _                                          => "!"
+    };
+
+    private string Message => Deploy.State switch
+    {
+        DeployState.Pending => "Saved. Waiting for the build to start…",
+        DeployState.Running => "Saved. Building the site (typically ~60–90s).",
+        DeployState.Success => "Site updated — your change is live.",
+        DeployState.Failure => Deploy.ErrorMessage ?? "Build failed.",
+        DeployState.Timeout => Deploy.ErrorMessage ?? "Build timed out.",
+        _ => ""
+    };
+
+    /// <summary>Append a query string so the browser fetches a fresh copy after deploy.</summary>
+    private static string CacheBust(string url, string? sha)
+    {
+        if (string.IsNullOrEmpty(sha)) return url;
+        char sep = url.Contains('?') ? '&' : '?';
+        return $"{url}{sep}v={sha[..Math.Min(7, sha.Length)]}";
+    }
+
+    private void Dismiss() => Deploy.Dismiss();
+
+    public void Dispose() => Deploy.Changed -= StateHasChanged;
+}

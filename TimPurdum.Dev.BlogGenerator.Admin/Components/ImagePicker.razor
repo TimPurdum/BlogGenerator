@@ -1,0 +1,169 @@
+@inject ImageUploadService Images
+@inject BlogAdminOptions Options
+
+@* Trigger button. Parent controls the label via @ButtonLabel. *@
+<button type="button" class="admin-button admin-button--small admin-button--ghost"
+        @onclick="Open" disabled="@Busy">
+    @ButtonLabel
+</button>
+
+@if (_open)
+{
+    <div class="image-picker-backdrop" @onclick="Close" role="presentation">
+        <div class="image-picker" role="dialog" aria-label="Pick image" @onclick:stopPropagation="true">
+            <header class="image-picker__header">
+                <h2 class="image-picker__title">Pick an image</h2>
+                <button type="button" class="image-picker__close" @onclick="Close" aria-label="Close">×</button>
+            </header>
+
+            <div class="image-picker__folder">
+                <label class="form-row__label" for="picker-folder">Folder</label>
+                <select id="picker-folder" class="form-input" @bind="_folder" @bind:after="LoadAsync">
+                    @foreach (string folder in ResolvedFolders)
+                    {
+                        <option value="@folder">@folder</option>
+                    }
+                </select>
+            </div>
+
+            <section class="image-picker__upload">
+                <h3 class="image-picker__subtitle">Upload new</h3>
+                <p class="form-row__hint">Files are resized to max @ImageUploadService.MaxWidth px wide and re-encoded as JPEG before upload.</p>
+                <InputFile OnChange="OnFileChosenAsync" accept="image/*" disabled="@Busy" />
+                @if (_uploadError is not null)
+                {
+                    <p class="image-picker__error">@_uploadError</p>
+                }
+            </section>
+
+            <section class="image-picker__browse">
+                <h3 class="image-picker__subtitle">Existing — @_folder/</h3>
+                @if (_loading)
+                {
+                    <p class="empty">Loading…</p>
+                }
+                else if (_listError is not null)
+                {
+                    <p class="image-picker__error">@_listError</p>
+                }
+                else if (_images.Count == 0)
+                {
+                    <p class="empty">No images in this folder yet.</p>
+                }
+                else
+                {
+                    <ul class="image-picker__grid">
+                        @foreach (ImageEntry image in _images)
+                        {
+                            <li class="image-picker__tile">
+                                <button type="button" class="image-picker__select"
+                                        @onclick="() => Choose(image.Url)" disabled="@Busy"
+                                        title="@image.Name">
+                                    <img src="@image.Url" alt="" loading="lazy" />
+                                    <span class="image-picker__name">@image.Name</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            @if (_busy)
+            {
+                <div class="image-picker__busy">@_busyText</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Label on the picker trigger button.</summary>
+    [Parameter] public string ButtonLabel { get; set; } = "Pick image";
+
+    /// <summary>Folders the user can pick from. When null (the default), the picker reads
+    /// <see cref="BlogAdminOptions.ImageFolders"/> instead — the per-site list configured via
+    /// AddBlogAdmin. Pass a specific array to scope the picker to a single content type.</summary>
+    [Parameter] public string[]? Folders { get; set; }
+
+    /// <summary>Folder selected by default when the picker opens. Defaults to the first folder available.</summary>
+    [Parameter] public string? DefaultFolder { get; set; }
+
+    /// <summary>Fires when the user picks (or successfully uploads) an image. Value is the public URL.</summary>
+    [Parameter] public EventCallback<string> OnPicked { get; set; }
+
+    /// <summary>External disable flag — let the parent block opening (e.g. while a parent save is in flight).</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    private bool _open;
+    private bool _loading;
+    private bool _busy;
+    private string _busyText = "";
+    private string _folder = "";
+    private string? _uploadError;
+    private string? _listError;
+    private List<ImageEntry> _images = [];
+
+    private IReadOnlyList<string> ResolvedFolders =>
+        Folders is { Length: > 0 } ? Folders : Options.ImageFolders;
+
+    private async Task Open()
+    {
+        _folder = DefaultFolder
+            ?? ResolvedFolders.FirstOrDefault()
+            ?? "images";
+        _open = true;
+        _uploadError = null;
+        _listError = null;
+        await LoadAsync();
+    }
+
+    private void Close() => _open = false;
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _listError = null;
+        try
+        {
+            _images = (await Images.ListAsync(_folder)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _listError = ex.Message;
+            _images = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnFileChosenAsync(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _uploadError = null;
+        _busy = true;
+        _busyText = $"Uploading {e.File.Name}…";
+        try
+        {
+            string url = await Images.UploadAsync(e.File, _folder);
+            await Choose(url);
+            await LoadAsync(); // refresh the grid so the new image is visible if user reopens
+        }
+        catch (Exception ex)
+        {
+            _uploadError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _busyText = "";
+        }
+    }
+
+    private async Task Choose(string url)
+    {
+        _open = false;
+        await OnPicked.InvokeAsync(url);
+    }
+}

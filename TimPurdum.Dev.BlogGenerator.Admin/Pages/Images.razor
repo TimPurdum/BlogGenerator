@@ -1,0 +1,208 @@
+@page "/images"
+@inject ImageUploadService ImageSvc
+@inject BlogAdminOptions Options
+@inject IJSRuntime JS
+
+<PageTitle>Images — admin</PageTitle>
+
+<header class="page-heading">
+    <h1>Images</h1>
+    <p class="page-heading__lede">Browse, upload, and delete images. New uploads are auto-resized to max @ImageUploadService.MaxWidth px wide.</p>
+</header>
+
+<div class="image-library">
+    <aside class="image-library__sidebar">
+        <h2 class="image-library__sidebar-title">Folder</h2>
+        <ul class="image-library__folders">
+            @foreach (string folder in Options.ImageFolders)
+            {
+                <li>
+                    <button type="button"
+                            class="image-library__folder @(folder == _folder ? "image-library__folder--active" : "")"
+                            @onclick="() => SwitchFolder(folder)">
+                        @folder
+                    </button>
+                </li>
+            }
+        </ul>
+
+        <div class="image-library__upload">
+            <h3 class="image-library__sidebar-title">Upload to @_folder/</h3>
+            <InputFile OnChange="OnFileChosenAsync" accept="image/*" disabled="@_busy" />
+            @if (_busy)
+            {
+                <p class="form-row__hint">Uploading…</p>
+            }
+            @if (_uploadError is not null)
+            {
+                <p class="image-picker__error">@_uploadError</p>
+            }
+        </div>
+    </aside>
+
+    <section class="image-library__content">
+        @if (_loading)
+        {
+            <p class="empty">Loading…</p>
+        }
+        else if (_listError is not null)
+        {
+            <div class="alert alert--error" role="alert">
+                <p><strong>Couldn't load images.</strong> @_listError</p>
+                <button class="admin-button admin-button--ghost" @onclick="LoadAsync">Try again</button>
+            </div>
+        }
+        else if (_images.Count == 0)
+        {
+            <p class="empty">No images in <code>@_folder/</code> yet.</p>
+        }
+        else
+        {
+            <ul class="image-library__grid">
+                @foreach (ImageEntry image in _images)
+                {
+                    <li class="image-library__tile">
+                        <figure class="image-library__figure">
+                            <img src="@image.Url" alt="" loading="lazy" />
+                        </figure>
+                        <div class="image-library__meta">
+                            <p class="image-library__name" title="@image.Name">@image.Name</p>
+                            <p class="image-library__size">@FormatSize(image.Size)</p>
+                        </div>
+                        <div class="image-library__actions">
+                            <button type="button" class="admin-button admin-button--small admin-button--ghost"
+                                    @onclick="() => CopyPath(image.Url)">
+                                Copy path
+                            </button>
+                            @if (_pendingDelete == image.Url)
+                            {
+                                <span class="confirm-row">
+                                    <span class="confirm-row__prompt">Delete?</span>
+                                    <button type="button" class="admin-button admin-button--small admin-button--danger"
+                                            @onclick="() => ConfirmDeleteAsync(image)" disabled="@_busy">Yes</button>
+                                    <button type="button" class="admin-button admin-button--small admin-button--ghost"
+                                            @onclick="() => _pendingDelete = null" disabled="@_busy">Cancel</button>
+                                </span>
+                            }
+                            else
+                            {
+                                <button type="button" class="admin-button admin-button--small admin-button--ghost"
+                                        @onclick="() => _pendingDelete = image.Url">
+                                    Delete
+                                </button>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+        @if (!string.IsNullOrEmpty(_lastCopied))
+        {
+            <p class="image-library__copied">Copied <code>@_lastCopied</code> to clipboard.</p>
+        }
+    </section>
+</div>
+
+@code {
+    private string _folder = "";
+    private bool _loading = true;
+    private bool _busy;
+    private string? _listError;
+    private string? _uploadError;
+    private string? _pendingDelete;
+    private string? _lastCopied;
+    private List<ImageEntry> _images = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _folder = Options.ImageFolders.FirstOrDefault() ?? "images";
+        await LoadAsync();
+    }
+
+    private async Task SwitchFolder(string folder)
+    {
+        _folder = folder;
+        _pendingDelete = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _listError = null;
+        try
+        {
+            _images = (await ImageSvc.ListAsync(_folder)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _listError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnFileChosenAsync(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        _busy = true;
+        _uploadError = null;
+        try
+        {
+            await ImageSvc.UploadAsync(e.File, _folder);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _uploadError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ConfirmDeleteAsync(ImageEntry image)
+    {
+        _busy = true;
+        try
+        {
+            await ImageSvc.DeleteAsync(image.Url, image.Sha);
+            _images.Remove(image);
+            _pendingDelete = null;
+        }
+        catch (Exception ex)
+        {
+            _uploadError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CopyPath(string url)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            _lastCopied = url;
+            await Task.Delay(2500);
+            if (_lastCopied == url) _lastCopied = null;
+            StateHasChanged();
+        }
+        catch
+        {
+            _lastCopied = null;
+        }
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:N0} KB",
+        _ => $"{bytes / 1024.0 / 1024.0:N1} MB",
+    };
+}
