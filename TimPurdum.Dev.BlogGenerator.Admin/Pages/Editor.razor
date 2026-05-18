@@ -1,0 +1,462 @@
+@page "/{TypeSlug}/new"
+@page "/{TypeSlug}/edit/{File}"
+@inject GitHubApiService Api
+@inject NavigationManager Nav
+@inject DeployStatusService Deploy
+@inject ContentTypeRegistry Registry
+
+<PageTitle>@PageTitleText — admin</PageTitle>
+
+<header class="page-heading">
+    <div class="page-heading__row">
+        <h1>@PageTitleText</h1>
+        @if (_descriptor is not null)
+        {
+            <a class="admin-button admin-button--ghost" href="/admin/@_descriptor.Slug">&larr; Back to @_descriptor.DisplayName</a>
+        }
+    </div>
+    @if (!string.IsNullOrEmpty(File))
+    {
+        <p class="page-heading__lede">Editing <code class="path">@File</code></p>
+    }
+</header>
+
+@if (_descriptor is null)
+{
+    <div class="alert alert--error" role="alert">
+        <p><strong>Unknown content type.</strong> <code>@TypeSlug</code> is not registered.</p>
+    </div>
+}
+else if (_loading)
+{
+    <p class="empty">Loading…</p>
+}
+else if (_error is not null)
+{
+    <div class="alert alert--error" role="alert">
+        <p><strong>Couldn't load file.</strong> @_error</p>
+    </div>
+}
+else
+{
+    <form class="editor" @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+        @* File-naming inputs. On /new these are blank; on edit they're pre-filled from the existing
+           filename so the user can change date + slug to rename in place. *@
+        <fieldset class="editor-fieldset">
+            <legend class="editor-fieldset__legend">File</legend>
+            <div class="form-grid">
+                @if (_descriptor.NamePattern != ContentNamePattern.Plain)
+                {
+                    <FormRow Label="Date" Required="true" For="entry-date" Hint="@DateHint">
+                        @if (_descriptor.NamePattern == ContentNamePattern.YearMonth)
+                        {
+                            <input id="entry-date" class="form-input" type="month" required
+                                   value="@_dateMonth"
+                                   @oninput="@(e => _dateMonth = e.Value?.ToString() ?? "")" />
+                        }
+                        else
+                        {
+                            <input id="entry-date" class="form-input" type="date" required
+                                   value="@_dateFull"
+                                   @oninput="@(e => _dateFull = e.Value?.ToString() ?? "")" />
+                        }
+                    </FormRow>
+                }
+                <FormRow Label="Slug" Required="true" For="entry-slug" Hint="@SlugHint">
+                    <input id="entry-slug" class="form-input" type="text" required
+                           value="@_slug"
+                           @oninput="@(e => _slug = e.Value?.ToString() ?? "")"
+                           pattern="[a-z0-9][a-z0-9\-]*"
+                           placeholder="@SlugPlaceholder"
+                           disabled="@_slugIsLocked" />
+                </FormRow>
+            </div>
+            @if (!string.IsNullOrEmpty(File) && WillRename)
+            {
+                <p class="form-row__hint" style="margin-top: 0.5rem;">
+                    Saving will rename: <code class="path">@OriginalFileName</code> &rarr; <code class="path">@BuildNewFileName()</code>.
+                    There is no automatic redirect. The old URL may keep working until old generated output is pruned.
+                </p>
+            }
+        </fieldset>
+
+        <fieldset class="editor-fieldset">
+            <legend class="editor-fieldset__legend">Frontmatter</legend>
+            @* DynamicComponent dispatches to whatever editor form the descriptor registered for this
+               content type. The form receives the typed frontmatter as a "Frontmatter" parameter. *@
+            <DynamicComponent Type="@_descriptor.EditorFormType"
+                              Parameters="@(new Dictionary<string, object?> { ["Frontmatter"] = _frontmatter })" />
+        </fieldset>
+
+        <fieldset class="editor-fieldset">
+            <legend class="editor-fieldset__legend">Body</legend>
+            <MarkdownEditor Value="@_body" ValueChanged="@(v => _body = v)" Height="32rem" />
+        </fieldset>
+
+        @if (_saveError is not null)
+        {
+            <div class="alert alert--error" role="alert">
+                <p><strong>Save failed.</strong> @_saveError</p>
+            </div>
+        }
+
+        <div class="editor-actions">
+            <button class="admin-button" type="submit" disabled="@_saving">@(_saving ? "Saving…" : "Save")</button>
+            <a class="admin-button admin-button--ghost" href="/admin/@_descriptor.Slug">Cancel</a>
+        </div>
+    </form>
+}
+
+@code {
+    [Parameter] public string? TypeSlug { get; set; }
+    [Parameter] public string? File { get; set; }
+
+    private IContentTypeDescriptor? _descriptor;
+    private bool _loading = true;
+    private string? _error;
+
+    private bool _saving;
+    private string? _saveError;
+
+    /// <summary>Front-matter held as <c>object</c> — the descriptor knows its real type, and the editor
+    /// form unboxes it as the typed parameter. Each request to the page allocates one instance.</summary>
+    private object _frontmatter = new();
+
+    private string _body = "";
+    private string? _existingSha;     // null on /new
+
+    // Filename inputs. On /new these start fresh; on edit they're pre-filled from the existing filename.
+    private string _dateFull = DateTime.Today.ToString("yyyy-MM-dd");   // YYYY-MM-DD for posts/music/shows
+    private string _dateMonth = DateTime.Today.ToString("yyyy-MM");      // YYYY-MM for gallery
+    private string _slug = "";
+
+    /// <summary>True when the slug shouldn't be editable. Currently used to lock the home page slug
+    /// (<c>index</c>), whose URL is hardcoded into the site's routing.</summary>
+    private bool _slugIsLocked;
+
+    private string OriginalFileName => string.IsNullOrEmpty(File) ? "" : Uri.UnescapeDataString(File);
+
+    /// <summary>True when the user changed date or slug on an existing entry, so Save needs to PUT+DELETE.
+    /// Returns false while the slug input is empty (BuildNewFileName would throw); the form's
+    /// <c>required</c> attribute on the slug field blocks submission in that state anyway.</summary>
+    private bool WillRename
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(File)) return false;
+            if (string.IsNullOrWhiteSpace(_slug)) return false;
+            return !string.Equals(BuildNewFileName(), OriginalFileName, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private string PageTitleText
+    {
+        get
+        {
+            string noun = _descriptor?.SingularNoun ?? "entry";
+            return string.IsNullOrEmpty(File) ? $"New {noun}" : $"Edit {noun}";
+        }
+    }
+
+    private string DateHint => _descriptor?.NamePattern switch
+    {
+        ContentNamePattern.YearMonth => "Approximate month — used for sort order.",
+        _                            => "Date used in the filename and (for dated types) in the URL."
+    };
+
+    private string SlugHint =>
+        _slugIsLocked
+            ? "The home page slug is locked — renaming it would break navigation."
+            : _descriptor?.NamePattern == ContentNamePattern.Plain
+                ? "Becomes the filename and URL — e.g. 'about' renders at /about.html."
+                : "lowercase-with-hyphens. Becomes the filename and (for flat URLs) the URL.";
+
+    private string SlugPlaceholder =>
+        _descriptor?.NamePattern == ContentNamePattern.Plain ? "about" : "my-new-entry";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _descriptor = TypeSlug is null ? null : Registry.FindBySlug(TypeSlug);
+        if (_descriptor is null)
+        {
+            _loading = false;
+            return;
+        }
+
+        // Allocate the typed front-matter through the descriptor so DynamicComponent receives the
+        // correct CLR type via the "Frontmatter" parameter.
+        _frontmatter = _descriptor.CreateFrontMatter();
+        _body = "";
+        _existingSha = null;
+        _slugIsLocked = false;
+        _slug = "";
+        _dateFull = DateTime.Today.ToString("yyyy-MM-dd");
+        _dateMonth = DateTime.Today.ToString("yyyy-MM");
+
+        if (string.IsNullOrEmpty(File))
+        {
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+        try
+        {
+            string decoded = Uri.UnescapeDataString(File);
+            string path = $"{_descriptor.ContentPath}/{decoded}";
+            RepoFile? repoFile = await Api.GetFileAsync(path);
+            if (repoFile is null)
+            {
+                _error = $"File '{decoded}' not found in {_descriptor.ContentPath}.";
+                return;
+            }
+            _existingSha = repoFile.Sha;
+            (_frontmatter, _body) = _descriptor.ParseDocument(repoFile.Text);
+            PrefillFilenameInputs(decoded);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    /// <summary>Populate the File fieldset (date + slug) from the existing filename so the user can edit
+    /// either piece to rename. Mirrors the format BuildNewFileName produces.</summary>
+    private void PrefillFilenameInputs(string fileName)
+    {
+        if (_descriptor is null) return;
+        string baseName = StripExtension(fileName);
+        switch (_descriptor.NamePattern)
+        {
+            case ContentNamePattern.YearMonth when TryParseYearMonth(baseName, out int y, out int m, out string slug):
+                _dateMonth = $"{y:D4}-{m:D2}";
+                _slug = slug;
+                break;
+            case ContentNamePattern.Dated when TryParseDated(baseName, out int y, out int m, out int d, out string slug):
+                _dateFull = $"{y:D4}-{m:D2}-{d:D2}";
+                _slug = slug;
+                break;
+            case ContentNamePattern.Plain:
+                _slug = baseName;
+                // Lock the home page slug — it's load-bearing for the public site's router.
+                _slugIsLocked = string.Equals(baseName, "index", StringComparison.OrdinalIgnoreCase);
+                break;
+            default:
+                // Filenames not matching the expected pattern — try to extract a loose date prefix
+                // so BuildNewFileName stays aligned with the current file unless the user actually
+                // edits a field. Falls back to leaving the slug box editable.
+                if (_descriptor.NamePattern == ContentNamePattern.Dated
+                    && TryExtractLooseDatePrefix(baseName, out string dateFull, out string datedSlug))
+                {
+                    _dateFull = dateFull;
+                    _slug = datedSlug;
+                }
+                else if (_descriptor.NamePattern == ContentNamePattern.YearMonth
+                    && TryExtractLooseYearMonthPrefix(baseName, out string dateMonth, out string monthSlug))
+                {
+                    _dateMonth = dateMonth;
+                    _slug = monthSlug;
+                }
+                else
+                {
+                    _slug = baseName;
+                }
+                break;
+        }
+    }
+
+    private static bool TryExtractLooseDatePrefix(string baseName, out string dateFull, out string slug)
+    {
+        dateFull = "";
+        slug = "";
+
+        if (string.IsNullOrEmpty(baseName) || baseName.Length < 11 || baseName[10] != '-')
+        {
+            return false;
+        }
+
+        if (!char.IsDigit(baseName[0]) || !char.IsDigit(baseName[1]) || !char.IsDigit(baseName[2]) || !char.IsDigit(baseName[3])
+            || baseName[4] != '-'
+            || !char.IsDigit(baseName[5]) || !char.IsDigit(baseName[6])
+            || baseName[7] != '-'
+            || !char.IsDigit(baseName[8]) || !char.IsDigit(baseName[9]))
+        {
+            return false;
+        }
+
+        if (!int.TryParse(baseName.Substring(0, 4), out int year)
+            || !int.TryParse(baseName.Substring(5, 2), out int month)
+            || !int.TryParse(baseName.Substring(8, 2), out int day))
+        {
+            return false;
+        }
+
+        if (month < 1 || month > 12 || day < 1 || day > DateTime.DaysInMonth(year, month))
+        {
+            return false;
+        }
+
+        dateFull = baseName.Substring(0, 10);
+        slug = baseName.Substring(11);
+        return true;
+    }
+
+    private static bool TryExtractLooseYearMonthPrefix(string baseName, out string dateMonth, out string slug)
+    {
+        dateMonth = "";
+        slug = "";
+
+        if (string.IsNullOrEmpty(baseName) || baseName.Length < 8 || baseName[7] != '-')
+        {
+            return false;
+        }
+
+        if (!char.IsDigit(baseName[0]) || !char.IsDigit(baseName[1]) || !char.IsDigit(baseName[2]) || !char.IsDigit(baseName[3])
+            || baseName[4] != '-'
+            || !char.IsDigit(baseName[5]) || !char.IsDigit(baseName[6]))
+        {
+            return false;
+        }
+
+        if (!int.TryParse(baseName.Substring(0, 4), out int year)
+            || !int.TryParse(baseName.Substring(5, 2), out int month))
+        {
+            return false;
+        }
+
+        if (month < 1 || month > 12)
+        {
+            return false;
+        }
+
+        dateMonth = baseName.Substring(0, 7);
+        slug = baseName.Substring(8);
+        return true;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_descriptor is null) return;
+        _saving = true;
+        _saveError = null;
+        try
+        {
+            // Descriptor's BuildDocument auto-stamps lastmodified when the front-matter implements
+            // IHasLastmodified — so the BlogGenerator regen heuristic notices the edit.
+            string fileText = _descriptor.BuildDocument(_frontmatter, _body);
+
+            bool isNew = string.IsNullOrEmpty(File);
+            string newFileName = BuildNewFileName();
+            string newPath = $"{_descriptor.ContentPath}/{newFileName}";
+
+            RepoCommitResult result;
+            string? viewLive = BuildViewLiveUrl(_descriptor, newFileName);
+
+            if (isNew)
+            {
+                string commitMessage = $"admin: create {_descriptor.Slug} entry {StripExtension(newFileName)}";
+                result = await Api.PutTextFileAsync(newPath, fileText, commitMessage);
+            }
+            else if (WillRename)
+            {
+                // Two-phase rename: write content at the new path (no sha, since it's a new file there),
+                // then delete the old path using its existing sha. Each step is its own commit — GitHub's
+                // Contents API has no atomic rename. If the DELETE fails after the PUT succeeds, content
+                // sits at both paths and the user will see the rename only partially applied. We surface
+                // the error; the user can re-Save to retry the delete.
+                string oldPath = $"{_descriptor.ContentPath}/{OriginalFileName}";
+                string slugForCommit = StripExtension(newFileName);
+                string putMessage = $"admin: rename {_descriptor.Slug} entry to {slugForCommit}";
+                result = await Api.PutTextFileAsync(newPath, fileText, putMessage);
+
+                string deleteMessage = $"admin: delete {_descriptor.Slug} entry {StripExtension(OriginalFileName)} (renamed to {slugForCommit})";
+                await Api.DeleteFileAsync(oldPath, _existingSha!, deleteMessage);
+            }
+            else
+            {
+                string commitMessage = $"admin: update {_descriptor.Slug} entry {StripExtension(newFileName)}";
+                result = await Api.PutTextFileAsync(newPath, fileText, commitMessage, _existingSha);
+            }
+
+            // Track the deploy so the user sees a banner update as the commit moves through CI.
+            if (!string.IsNullOrEmpty(result.CommitSha))
+            {
+                Deploy.Track(result.CommitSha, viewLive);
+            }
+
+            Nav.NavigateTo($"/admin/{_descriptor.Slug}");
+        }
+        catch (Exception ex)
+        {
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private string BuildNewFileName()
+    {
+        if (_descriptor is null) throw new InvalidOperationException("No descriptor.");
+        if (string.IsNullOrWhiteSpace(_slug)) throw new InvalidOperationException("Slug is required.");
+        string slug = _slug.Trim().ToLowerInvariant();
+        return _descriptor.NamePattern switch
+        {
+            ContentNamePattern.YearMonth => $"{_dateMonth}-{slug}.md",
+            ContentNamePattern.Plain     => $"{slug}.md",
+            _                            => $"{_dateFull}-{slug}.md"
+        };
+    }
+
+    /// <summary>Reverse the BlogGenerator's URL convention so we can deep-link the user to their just-saved entry.
+    /// Descriptors can supply a custom <c>BuildLiveUrl</c> override; otherwise we derive the URL from the
+    /// content type's name pattern using BlogGenerator's default conventions.</summary>
+    private static string? BuildViewLiveUrl(IContentTypeDescriptor descriptor, string fileName)
+    {
+        if (descriptor.BuildLiveUrl is not null) return descriptor.BuildLiveUrl(fileName);
+
+        string baseName = StripExtension(fileName);
+        return descriptor.NamePattern switch
+        {
+            ContentNamePattern.Dated when TryParseDated(baseName, out int y, out int m, out int d, out string slug)
+                => $"/{descriptor.UrlStem}/{y}/{m}/{d}/{slug}.html",
+            ContentNamePattern.YearMonth when TryParseYearMonth(baseName, out _, out _, out string slug)
+                => $"/{descriptor.UrlStem}/{slug}.html",
+            ContentNamePattern.Plain
+                => baseName == "index" ? "/" : $"/{baseName}.html",
+            _ => null
+        };
+    }
+
+    private static bool TryParseDated(string baseName, out int year, out int month, out int day, out string slug)
+    {
+        year = month = day = 0; slug = "";
+        string[] parts = baseName.Split('-', 4);
+        if (parts.Length < 4) return false;
+        if (!int.TryParse(parts[0], out year) ||
+            !int.TryParse(parts[1], out month) ||
+            !int.TryParse(parts[2], out day)) return false;
+        slug = parts[3];
+        return true;
+    }
+
+    private static bool TryParseYearMonth(string baseName, out int year, out int month, out string slug)
+    {
+        year = month = 0; slug = "";
+        string[] parts = baseName.Split('-', 3);
+        if (parts.Length < 3) return false;
+        if (!int.TryParse(parts[0], out year) ||
+            !int.TryParse(parts[1], out month)) return false;
+        slug = parts[2];
+        return true;
+    }
+
+    private static string StripExtension(string fileName) =>
+        fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? fileName[..^3] : fileName;
+}

@@ -1,0 +1,91 @@
+@page "/"
+@inject GitHubApiService Api
+@inject ContentTypeRegistry Registry
+
+<PageTitle>Dashboard — admin</PageTitle>
+
+<header class="page-heading">
+    <h1>Dashboard</h1>
+    <p class="page-heading__lede">Snapshot of what's in the repo right now.</p>
+</header>
+
+@if (_loading)
+{
+    <p class="empty">Loading counts…</p>
+}
+else if (_error is not null)
+{
+    <div class="alert alert--error" role="alert">
+        <p><strong>Couldn't load counts.</strong> @_error</p>
+        <button class="admin-button admin-button--ghost" @onclick="LoadAsync">Try again</button>
+    </div>
+}
+else
+{
+    <section class="counts">
+        @foreach (CountTile tile in _tiles)
+        {
+            <a class="count-tile" href="@tile.LinkUrl">
+                <span class="count-tile__label">@tile.Label</span>
+                <span class="count-tile__value">@tile.Count</span>
+                <span class="count-tile__hint">@tile.Hint</span>
+            </a>
+        }
+    </section>
+
+    <section class="quick-actions">
+        <h2 class="section-title">Create</h2>
+        <div class="quick-actions__row">
+            @foreach (IContentTypeDescriptor descriptor in Registry.All)
+            {
+                <a class="admin-button" href="/admin/@descriptor.Slug/new">New @descriptor.SingularNoun</a>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private bool _loading = true;
+    private string? _error;
+    private CountTile[] _tiles = [];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            // Probe each content directory in parallel so a slow connection only costs one round-trip.
+            IContentTypeDescriptor[] descriptors = Registry.All.ToArray();
+            Task<int>[] counts = descriptors.Select(d => CountAsync(d.ContentPath)).ToArray();
+            await Task.WhenAll(counts);
+
+            _tiles = descriptors
+                .Select((d, i) => new CountTile(
+                    Label: d.DisplayName,
+                    Count: counts[i].Result,
+                    LinkUrl: $"/admin/{d.Slug}",
+                    Hint: d.DashboardHint))
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task<int> CountAsync(string path)
+    {
+        IReadOnlyList<RepoEntry> entries = await Api.ListDirectoryAsync(path);
+        // Markdown content files only — ignore subdirectories or stray non-.md files.
+        return entries.Count(e => e.Type == "file" && e.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed record CountTile(string Label, int Count, string LinkUrl, string Hint);
+}

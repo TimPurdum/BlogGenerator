@@ -1,0 +1,26 @@
+@* Simple form-row wrapper: aligned label + input, optional required marker, optional hint text. *@
+
+<div class="form-row">
+    <label class="form-row__label" for="@For">
+        @Label
+        @if (Required)
+        {
+            <span class="form-row__required" aria-hidden="true">*</span>
+        }
+    </label>
+    <div class="form-row__field">
+        @ChildContent
+        @if (!string.IsNullOrEmpty(Hint))
+        {
+            <p class="form-row__hint">@Hint</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public required string Label { get; set; }
+    [Parameter] public string For { get; set; } = "";
+    [Parameter] public bool Required { get; set; }
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

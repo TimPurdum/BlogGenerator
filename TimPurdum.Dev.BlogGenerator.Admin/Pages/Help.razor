@@ -1,0 +1,184 @@
+@page "/help"
+@inject BlogAdminOptions Options
+@inject ContentTypeRegistry Registry
+
+<PageTitle>Help — admin</PageTitle>
+
+<header class="page-heading">
+    <h1>Help</h1>
+    <p class="page-heading__lede">How to manage the site from this admin.</p>
+</header>
+
+<article class="help">
+
+<section class="help__section">
+<h2>Signing in</h2>
+<p>
+    The admin uses a <strong>GitHub Personal Access Token</strong> (PAT) so it can commit your changes
+    to the site's repository. Tokens are valid for up to a year, after which you'll need to generate a
+    new one.
+</p>
+<ol>
+    <li>Go to <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener">GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens</a> and click <em>Generate new token</em>.</li>
+    <li>Repository access: <strong>Only select repositories</strong> → pick <code>@Options.Repo.Owner/@Options.Repo.Repo</code>.</li>
+    <li>Permissions: set <strong>Contents</strong> to <em>Read and write</em>. Leave everything else default.</li>
+    <li>Click <em>Generate token</em>, copy the value, paste it into the admin's sign-in screen.</li>
+</ol>
+<p>The token is stored in your browser's local storage on this device only. Sign out clears it.</p>
+</section>
+
+<hr />
+
+<section class="help__section">
+<h2>The tabs</h2>
+<dl class="help__dl">
+    <dt>Dashboard</dt>
+    <dd>Overview with counts of every content type, plus quick "New" buttons.</dd>
+
+    @foreach (IContentTypeDescriptor descriptor in Registry.All)
+    {
+        <dt>@descriptor.DisplayName</dt>
+        <dd>@(string.IsNullOrEmpty(descriptor.DashboardHint) ? $"{descriptor.DisplayName} entries." : descriptor.DashboardHint)</dd>
+    }
+
+    <dt>Images</dt>
+    <dd>The image library — browse what's been uploaded, upload new images, delete unused ones.</dd>
+
+    <dt>Help</dt>
+    <dd>This page.</dd>
+</dl>
+</section>
+
+<hr />
+
+<section class="help__section">
+<h2>Editing an existing entry</h2>
+<ol>
+    <li>Click the tab for the content type.</li>
+    <li>Click the entry's slug in the table to open the editor.</li>
+    <li>Change whatever you need to in the form fields or the body.</li>
+    <li>Click <strong>Save</strong>.</li>
+</ol>
+<p>The page reloads to the list. A banner appears at the bottom of the screen tracking the deploy.</p>
+<p>
+    <strong>Renaming:</strong> the <em>Date</em> and <em>Slug</em> fields stay editable on existing entries.
+    Change either one and a confirmation line appears at the bottom of the File section showing the new
+    filename. Save then writes the entry under the new name and removes the old file (two commits, both
+    automatic). There is no automatic redirect. The old URL may keep working until old generated output is
+    pruned, so rename only if a stale link won't matter. The home page slug (<code>index</code>) can't be renamed.
+</p>
+</section>
+
+<section class="help__section">
+<h2>Creating a new entry</h2>
+<ol>
+    <li>Click the tab for the type of content you're creating.</li>
+    <li>Click the <strong>New</strong> button at the top.</li>
+    <li>For dated content types, pick a date. For static pages, no date — just a slug.</li>
+    <li>
+        Type a slug — lowercase, words separated by hyphens. For example <code>dvorak-cello-concerto</code> rather than
+        <code>Dvorak Cello Concerto</code>. This becomes part of the file name and the URL.
+    </li>
+    <li>Fill in the form fields and write the body.</li>
+    <li>Click <strong>Save</strong>.</li>
+</ol>
+<p class="help__warning">
+    <strong>Slug uniqueness:</strong> content types with flat URLs can't share a slug — two entries with
+    the same slug in the same category will collide. The site's build will fail with a clear error if
+    that happens; rename one to fix.
+</p>
+</section>
+
+<section class="help__section">
+<h2>Working with images</h2>
+<p>
+    Anywhere a form field expects an image path, there's a <strong>Pick / upload</strong> button next to
+    it. Click it to:
+</p>
+<ul>
+    <li>Pick an image that's already been uploaded (organized by folder).</li>
+    <li>Upload a new image — choose any folder and pick a file from your computer.</li>
+</ul>
+<p>
+    Uploaded images are automatically resized to a maximum of 2000 px wide and saved as JPEG. The site
+    stays small and snappy even with high-resolution source photos. Original photos on your device
+    aren't touched.
+</p>
+<p>
+    Use the <strong>Images</strong> tab to browse and clean up the library. Each image has a <em>Copy path</em>
+    button (puts the path in your clipboard, ready to paste into another field) and a <em>Delete</em> button.
+</p>
+</section>
+
+<hr />
+
+<section class="help__section">
+<h2>After you save: the deploy banner</h2>
+<p>
+    When you save, a small banner appears in the bottom-left corner with the build status:
+</p>
+<dl class="help__dl">
+    <dt>Saved. Waiting for the build to start…</dt>
+    <dd>GitHub has the commit; the build hasn't been picked up yet. Usually a few seconds.</dd>
+
+    <dt>Saved. Building the site…</dt>
+    <dd>The build is running. Typically 60–90 seconds.</dd>
+
+    <dt>Site updated — your change is live.</dt>
+    <dd>Click <strong>View live</strong> to see your change on the public site.</dd>
+
+    <dt>Build failed.</dt>
+    <dd>Click <strong>View log</strong> to see what went wrong. Most common cause: a duplicate slug.</dd>
+</dl>
+<p>
+    You don't have to wait around — the banner persists if you navigate to other admin tabs, and updates itself.
+    Close it with the × when you're done.
+</p>
+</section>
+
+<hr />
+
+<section class="help__section">
+<h2>Deleting</h2>
+<p>
+    Every list page has a <em>Delete</em> button on each row. Clicking it asks for confirmation right there in
+    the row. Once you confirm, the file is removed from the repo and the next deploy drops the page from the
+    site.
+</p>
+<p class="help__warning">
+    Deletes are permanent through the admin, but the file lives in git history forever — anyone with repo
+    access can restore it via the command line.
+</p>
+</section>
+
+<hr />
+
+<section class="help__section">
+<h2>Common gotchas</h2>
+<dl class="help__dl">
+    <dt>"Save failed" with a network error</dt>
+    <dd>
+        Usually a token issue — sign out and back in with a fresh PAT. If the token's permissions changed
+        (e.g. you accidentally removed Contents: read &amp; write), the API rejects the commit.
+    </dd>
+
+    <dt>I edited something but the site still shows the old version</dt>
+    <dd>
+        Browsers cache pages aggressively. Use the <strong>View live</strong> button from the deploy banner —
+        it appends a cache-buster so you always see the fresh page. Or hold Shift while you reload.
+    </dd>
+</dl>
+</section>
+
+<hr />
+
+<section class="help__section">
+<h2>If something goes really wrong</h2>
+<p>
+    Open an issue on the
+    <a href="https://github.com/@Options.Repo.Owner/@Options.Repo.Repo/issues" target="_blank" rel="noopener">repo</a>
+    with what you were doing and the error message.
+</p>
+</section>
+
+</article>

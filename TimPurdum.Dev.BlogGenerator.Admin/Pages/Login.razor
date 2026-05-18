@@ -1,0 +1,66 @@
+@inject AuthService Auth
+@inject GitHubApiService Api
+
+<div class="login">
+    <header class="login__header">
+        <h1 class="login__title">Sign in</h1>
+        <p class="login__lede">Paste a GitHub Personal Access Token with <code>Contents: read &amp; write</code> on this repo.</p>
+    </header>
+
+    <form class="login__form" @onsubmit="SubmitAsync" @onsubmit:preventDefault="true">
+        <label class="login__label" for="pat">Personal Access Token</label>
+        <input id="pat" class="login__input" type="password" @bind="_token" autocomplete="off" placeholder="github_pat_…" />
+        <button class="admin-button" type="submit" disabled="@_busy">@(_busy ? "Checking…" : "Sign in")</button>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="login__error" role="alert">@_error</p>
+        }
+    </form>
+
+    <details class="login__help">
+        <summary>How to get a token</summary>
+        <ol>
+            <li>Go to GitHub → Settings → Developer settings → Personal access tokens → <strong>Fine-grained tokens</strong>.</li>
+            <li>Click <em>Generate new token</em>. Set repository access to <em>Only select repositories</em> and pick this site's repo.</li>
+            <li>Under permissions, set <strong>Contents</strong> to <em>Read and write</em>. Leave everything else at the defaults.</li>
+            <li>Click <em>Generate token</em> and copy the value into the field above. Tokens last up to a year.</li>
+        </ol>
+    </details>
+</div>
+
+@code {
+    private string _token = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_token))
+        {
+            _error = "Paste a token to continue.";
+            return;
+        }
+        _busy = true;
+        try
+        {
+            bool ok = await Auth.LoginAsync(_token.Trim(), Api);
+            if (!ok)
+            {
+                _error = "GitHub rejected that token. Double-check it has Contents: read & write on this repo.";
+            }
+            else
+            {
+                _token = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Network or API error: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,45 @@
+@inject AuthService Auth
+@inject GitHubApiService Api
+@implements IDisposable
+
+@if (!_initialized)
+{
+    <div class="splash">
+        <p>Loading…</p>
+    </div>
+}
+else
+{
+    <Router AppAssembly="@typeof(App).Assembly" AdditionalAssemblies="AdditionalAssemblies">
+        <Found Context="routeData">
+            <RouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)" />
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="@typeof(Layout.MainLayout)">
+                <h1>Not found</h1>
+                <p>That admin page doesn't exist.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+}
+
+@code {
+    /// <summary>
+    /// Additional assemblies the Blazor router should scan for <c>@@page</c>-routed components.
+    /// Consumer sites that want to add their own admin pages alongside the library's pages pass
+    /// their assembly through this parameter; otherwise only the library's pages are routed.
+    /// </summary>
+    [Parameter] public IEnumerable<System.Reflection.Assembly>? AdditionalAssemblies { get; set; }
+
+    private bool _initialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChanged += StateHasChanged;
+        await Auth.InitializeAsync(Api);
+        _initialized = true;
+    }
+
+    public void Dispose() => Auth.OnChanged -= StateHasChanged;
+}
