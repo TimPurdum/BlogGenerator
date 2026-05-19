@@ -179,13 +179,31 @@ else
         string slug;
         if (_descriptor.NamePattern == ContentNamePattern.YearMonth)
         {
-            date = new DateTime(year, month, 1);
+            if (!DateTime.TryParseExact(
+                $"{year}-{month}",
+                "yyyy-M",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out date))
+            {
+                return null;
+            }
+
             slug = parts[2];
         }
         else
         {
             if (!int.TryParse(parts[2], out int day)) return null;
-            date = new DateTime(year, month, day);
+            if (!DateTime.TryParseExact(
+                $"{year}-{month}-{day}",
+                "yyyy-M-d",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out date))
+            {
+                return null;
+            }
+
             slug = parts[3];
         }
 
