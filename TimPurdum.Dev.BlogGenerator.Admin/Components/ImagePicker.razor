@@ -104,13 +104,16 @@
     private List<ImageEntry> _images = [];
 
     private IReadOnlyList<string> ResolvedFolders =>
-        Folders is { Length: > 0 } ? Folders : Options.ImageFolders;
+        Folders is { Length: > 0 } ? Folders :
+        Options.ImageFolders is { Count: > 0 } ? Options.ImageFolders :
+        ["images"];
 
     private async Task Open()
     {
-        _folder = DefaultFolder
-            ?? ResolvedFolders.FirstOrDefault()
-            ?? "images";
+        var resolvedFolders = ResolvedFolders;
+        _folder = DefaultFolder is not null && resolvedFolders.Contains(DefaultFolder)
+            ? DefaultFolder
+            : resolvedFolders[0];
         _open = true;
         _uploadError = null;
         _listError = null;
