@@ -2,6 +2,7 @@
 @inject ImageUploadService ImageSvc
 @inject BlogAdminOptions Options
 @inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Images — admin</PageTitle>
 
@@ -113,6 +114,11 @@
     private string? _lastCopied;
     private List<ImageEntry> _images = [];
 
+    /// <summary>Cancels the "Copied to clipboard" toast's auto-dismiss timer when the component
+    /// is disposed (or when a new copy supersedes the previous one) so the timer doesn't fire
+    /// StateHasChanged on a torn-down component.</summary>
+    private CancellationTokenSource? _copyToastCts;
+
     protected override async Task OnInitializedAsync()
     {
         _folder = Options.ImageFolders.FirstOrDefault() ?? "images";
@@ -188,15 +194,41 @@
         try
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
-            _lastCopied = url;
-            await Task.Delay(2500);
-            if (_lastCopied == url) _lastCopied = null;
-            StateHasChanged();
         }
         catch
         {
             _lastCopied = null;
+            return;
         }
+
+        // Tear down any prior toast timer before starting a new one — back-to-back Copy clicks
+        // shouldn't pile up pending continuations.
+        _copyToastCts?.Cancel();
+        _copyToastCts?.Dispose();
+        _copyToastCts = new CancellationTokenSource();
+        CancellationToken ct = _copyToastCts.Token;
+
+        _lastCopied = url;
+        try
+        {
+            await Task.Delay(2500, ct);
+        }
+        catch (TaskCanceledException)
+        {
+            // Component disposed or superseded — skip the StateHasChanged below.
+            return;
+        }
+
+        if (ct.IsCancellationRequested) return;
+        if (_lastCopied == url) _lastCopied = null;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _copyToastCts?.Cancel();
+        _copyToastCts?.Dispose();
+        _copyToastCts = null;
     }
 
     private static string FormatSize(long bytes) => bytes switch
