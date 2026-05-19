@@ -24,8 +24,8 @@ public sealed class DeployStatusService(GitHubApiService api)
     /// <summary>Start tracking the deploy triggered by <paramref name="commitSha"/>. Cancels any prior tracker.</summary>
     public void Track(string commitSha, string? viewLiveUrl)
     {
-        _cts?.Cancel();
-        _cts = new CancellationTokenSource();
+        CancellationTokenSource cts = new();
+        ReplaceTokenSource(cts);
         State = DeployState.Pending;
         CommitSha = commitSha;
         ViewLiveUrl = viewLiveUrl;
@@ -33,13 +33,13 @@ public sealed class DeployStatusService(GitHubApiService api)
         ErrorMessage = null;
         Changed?.Invoke();
 
-        _ = PollAsync(commitSha, _cts.Token);
+        _ = PollAsync(commitSha, cts.Token);
     }
 
     /// <summary>Stop tracking and reset the banner. Called by the dismiss button.</summary>
     public void Dismiss()
     {
-        _cts?.Cancel();
+        ReplaceTokenSource(null);
         State = DeployState.Idle;
         CommitSha = null;
         ViewLiveUrl = null;
@@ -94,6 +94,15 @@ public sealed class DeployStatusService(GitHubApiService api)
             ErrorMessage = $"Still building after {Timeout.TotalMinutes:N0} minutes — check the Actions log.";
             Changed?.Invoke();
         }
+    }
+
+    private void ReplaceTokenSource(CancellationTokenSource? next)
+    {
+        CancellationTokenSource? previous = _cts;
+        _cts = next;
+        if (previous is null) return;
+        previous.Cancel();
+        previous.Dispose();
     }
 }
 

@@ -51,24 +51,30 @@ window.adminResizeImage = function (bytes, maxWidth, quality) {
             var url = URL.createObjectURL(blob);
             var img = new Image();
             img.onload = function () {
-                URL.revokeObjectURL(url);
-                var ratio = Math.min(1, maxWidth / img.naturalWidth);
-                var w = Math.round(img.naturalWidth * ratio);
-                var h = Math.round(img.naturalHeight * ratio);
-                var canvas = document.createElement("canvas");
-                canvas.width = w;
-                canvas.height = h;
-                var ctx = canvas.getContext("2d");
-                // White background so PNG transparency doesn't go black when we re-encode to JPEG.
-                ctx.fillStyle = "#FFFFFF";
-                ctx.fillRect(0, 0, w, h);
-                ctx.drawImage(img, 0, 0, w, h);
-                canvas.toBlob(function (out) {
-                    if (!out) { reject("canvas.toBlob produced no output"); return; }
-                    out.arrayBuffer().then(function (buf) {
-                        resolve(new Uint8Array(buf));
-                    }, reject);
-                }, "image/jpeg", quality);
+                try {
+                    var ratio = Math.min(1, maxWidth / img.naturalWidth);
+                    var w = Math.round(img.naturalWidth * ratio);
+                    var h = Math.round(img.naturalHeight * ratio);
+                    var canvas = document.createElement("canvas");
+                    canvas.width = w;
+                    canvas.height = h;
+                    var ctx = canvas.getContext("2d");
+                    if (!ctx) { reject("could not get 2d canvas context"); return; }
+                    // White background so PNG transparency doesn't go black when we re-encode to JPEG.
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.fillRect(0, 0, w, h);
+                    ctx.drawImage(img, 0, 0, w, h);
+                    canvas.toBlob(function (out) {
+                        if (!out) { reject("canvas.toBlob produced no output"); return; }
+                        out.arrayBuffer().then(function (buf) {
+                            resolve(new Uint8Array(buf));
+                        }, reject);
+                    }, "image/jpeg", quality);
+                } catch (e) {
+                    reject(e && e.message ? e.message : String(e));
+                } finally {
+                    URL.revokeObjectURL(url);
+                }
             };
             img.onerror = function () {
                 URL.revokeObjectURL(url);

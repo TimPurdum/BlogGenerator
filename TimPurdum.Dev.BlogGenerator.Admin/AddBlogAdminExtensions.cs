@@ -22,6 +22,7 @@ public static class AddBlogAdminExtensions
     {
         BlogAdminOptions options = new();
         configure(options);
+        ValidateOptions(options);
 
         // Apply any built-in content type overrides + registrations, then snapshot the descriptor list.
         IReadOnlyList<IContentTypeDescriptor> descriptors = BuildDescriptors(options);
@@ -36,6 +37,24 @@ public static class AddBlogAdminExtensions
         services.AddSingleton<ImageUploadService>();
 
         return services;
+    }
+
+    private static void ValidateOptions(BlogAdminOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.Repo.Owner))
+        {
+            throw new ArgumentException("BlogAdminOptions.Repo.Owner is required.", nameof(options));
+        }
+
+        if (string.IsNullOrWhiteSpace(options.Repo.Repo))
+        {
+            throw new ArgumentException("BlogAdminOptions.Repo.Repo is required.", nameof(options));
+        }
+
+        if (string.IsNullOrWhiteSpace(options.PatStorageKey))
+        {
+            throw new ArgumentException("BlogAdminOptions.PatStorageKey is required.", nameof(options));
+        }
     }
 
     private static IReadOnlyList<IContentTypeDescriptor> BuildDescriptors(BlogAdminOptions options)

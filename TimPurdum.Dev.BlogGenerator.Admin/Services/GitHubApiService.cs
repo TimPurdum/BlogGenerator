@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Linq;
 
 namespace TimPurdum.Dev.BlogGenerator.Admin.Services;
 
@@ -52,7 +53,8 @@ public sealed class GitHubApiService(HttpClient http, AuthService auth, BlogAdmi
         if (entry is null || entry.Type != "file") return null;
         string text = entry.Content is null
             ? string.Empty
-            : Encoding.UTF8.GetString(Convert.FromBase64String(entry.Content.Replace("\n", "")));
+            : Encoding.UTF8.GetString(Convert.FromBase64String(
+                new string(entry.Content.Where(static c => !char.IsWhiteSpace(c)).ToArray())));
         return new RepoFile(entry.Path, entry.Sha, text);
     }
 
