@@ -39,7 +39,12 @@ public static class MarkdownDocument
         }
         catch (YamlException ex)
         {
-            throw new MarkdownFrontMatterParseException($"Front-matter YAML is invalid: {ex.Message}", yaml, ex);
+            long userFacingLine = ex.Start.Line + 1;
+            long userFacingColumn = ex.Start.Column + 1;
+            throw new MarkdownFrontMatterParseException(
+                $"Front-matter YAML is invalid near line {userFacingLine}, column {userFacingColumn}. Fix the YAML and try again.",
+                yaml,
+                ex);
         }
         return (front, body);
     }
@@ -62,13 +67,22 @@ public static class MarkdownDocument
     }
 }
 
+/// <summary>
+/// Thrown when a markdown file contains a front-matter block that cannot be deserialized as YAML.
+/// </summary>
 public sealed class MarkdownFrontMatterParseException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MarkdownFrontMatterParseException"/> class.
+    /// </summary>
     public MarkdownFrontMatterParseException(string message, string rawYaml, Exception innerException)
         : base(message, innerException)
     {
         RawYaml = rawYaml;
     }
 
+    /// <summary>
+    /// Gets the original raw YAML block that failed to parse.
+    /// </summary>
     public string RawYaml { get; }
 }
