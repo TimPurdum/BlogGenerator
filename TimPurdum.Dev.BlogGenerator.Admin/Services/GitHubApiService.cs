@@ -119,9 +119,9 @@ public sealed class GitHubApiService(HttpClient http, AuthService auth, BlogAdmi
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         }
         req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        // User-Agent is derived from site name so GitHub abuse reports point at the right consumer.
+        // In Blazor WebAssembly, the browser controls User-Agent, so send a custom client header instead.
         string ua = string.IsNullOrWhiteSpace(options.SiteName) ? "BlogGeneratorAdmin" : options.SiteName.Replace(' ', '-');
-        req.Headers.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue(ua, "1.0"));
+        req.Headers.Add("X-BlogGenerator-Client", $"{ua}/1.0");
         req.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
     }
 
