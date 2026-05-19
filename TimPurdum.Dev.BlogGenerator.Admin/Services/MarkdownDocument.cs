@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 
 namespace TimPurdum.Dev.BlogGenerator.Admin.Services;
@@ -36,9 +37,9 @@ public static class MarkdownDocument
         {
             front = Deserializer.Deserialize<TFront>(yaml) ?? new TFront();
         }
-        catch
+        catch (YamlException ex)
         {
-            front = new TFront();
+            throw new MarkdownFrontMatterParseException($"Front-matter YAML is invalid: {ex.Message}", yaml, ex);
         }
         return (front, body);
     }
@@ -59,4 +60,15 @@ public static class MarkdownDocument
         }
         return sb.ToString();
     }
+}
+
+public sealed class MarkdownFrontMatterParseException : Exception
+{
+    public MarkdownFrontMatterParseException(string message, string rawYaml, Exception innerException)
+        : base(message, innerException)
+    {
+        RawYaml = rawYaml;
+    }
+
+    public string RawYaml { get; }
 }
