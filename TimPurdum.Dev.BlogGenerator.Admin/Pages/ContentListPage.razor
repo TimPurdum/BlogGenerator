@@ -1,0 +1,238 @@
+@page "/{TypeSlug}"
+@inject GitHubApiService Api
+@inject ContentTypeRegistry Registry
+@inject NavigationManager Nav
+
+<PageTitle>@TitleText — admin</PageTitle>
+
+@if (_descriptor is null)
+{
+    <div class="alert alert--error" role="alert">
+        <p><strong>Unknown content type.</strong> <code>@TypeSlug</code> is not registered.</p>
+    </div>
+}
+else
+{
+    <header class="page-heading">
+        <div class="page-heading__row">
+            <h1>@_descriptor.DisplayName</h1>
+            <a class="admin-button" href="/admin/@_descriptor.Slug/new">New @_descriptor.SingularNoun</a>
+        </div>
+        @if (!string.IsNullOrEmpty(_descriptor.DashboardHint))
+        {
+            <p class="page-heading__lede">@_descriptor.DashboardHint</p>
+        }
+    </header>
+
+    @if (_loading)
+    {
+        <p class="empty">Loading…</p>
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert--error" role="alert">
+            <p><strong>Couldn't load entries.</strong> @_error</p>
+            <button class="admin-button admin-button--ghost" @onclick="LoadAsync">Try again</button>
+        </div>
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="alert">
+            <p>No entries yet.</p>
+            <a class="admin-button" href="/admin/@_descriptor.Slug/new">Create the first one</a>
+        </div>
+    }
+    else
+    {
+        <table class="content-table">
+            <thead>
+                <tr>
+                    @if (_descriptor.NamePattern != ContentNamePattern.Plain)
+                    {
+                        <th class="content-table__date">Date</th>
+                    }
+                    <th class="content-table__slug">Slug</th>
+                    <th class="content-table__actions"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (Row row in _rows)
+                {
+                    <tr class="content-table__row">
+                        @if (_descriptor.NamePattern != ContentNamePattern.Plain)
+                        {
+                            <td class="content-table__date">
+                                <time datetime="@row.Date.ToString("yyyy-MM-dd")">@row.Date.ToString(DateFormat)</time>
+                            </td>
+                        }
+                        <td class="content-table__slug">
+                            <a class="content-table__title" href="/admin/@_descriptor.Slug/edit/@Uri.EscapeDataString(row.FileName)">@row.Slug</a>
+                        </td>
+                        <td class="content-table__actions">
+                            @if (_pendingDelete == row.FileName)
+                            {
+                                <span class="confirm-row">
+                                    <span class="confirm-row__prompt">Delete?</span>
+                                    <button class="admin-button admin-button--small admin-button--danger" @onclick="() => ConfirmDeleteAsync(row)" disabled="@_busy">Yes, delete</button>
+                                    <button class="admin-button admin-button--small admin-button--ghost" @onclick="CancelDelete" disabled="@_busy">Cancel</button>
+                                </span>
+                            }
+                            else
+                            {
+                                <a class="admin-button admin-button--small admin-button--ghost" href="/admin/@_descriptor.Slug/edit/@Uri.EscapeDataString(row.FileName)">Edit</a>
+                                <button class="admin-button admin-button--small admin-button--ghost" @onclick="() => RequestDelete(row)">Delete</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="content-table__count">@_rows.Count entries</p>
+    }
+}
+
+@code {
+    [Parameter] public string? TypeSlug { get; set; }
+
+    private IContentTypeDescriptor? _descriptor;
+    private bool _loading = true;
+    private string? _error;
+    private List<Row> _rows = [];
+    private string? _pendingDelete;
+    private bool _busy;
+
+    private string TitleText => _descriptor?.DisplayName ?? "Content";
+
+    private string DateFormat => _descriptor?.NamePattern switch
+    {
+        ContentNamePattern.YearMonth => "MMM yyyy",
+        ContentNamePattern.Plain     => "—", // not used; column is hidden
+        _                            => "MMM d, yyyy"
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _descriptor = TypeSlug is null ? null : Registry.FindBySlug(TypeSlug);
+        if (_descriptor is null)
+        {
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_descriptor is null) return;
+        _loading = true;
+        _error = null;
+        try
+        {
+            IReadOnlyList<RepoEntry> entries = await Api.ListDirectoryAsync(_descriptor.ContentPath);
+            IEnumerable<Row> parsed = entries
+                .Where(e => e.Type == "file" && e.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                .Select(ParseRow)
+                .Where(r => r is not null)
+                .Select(r => r!);
+            _rows = _descriptor.NamePattern == ContentNamePattern.Plain
+                ? parsed.OrderBy(r => r.Slug, StringComparer.OrdinalIgnoreCase).ToList()
+                : parsed.OrderByDescending(r => r.Date).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Row? ParseRow(RepoEntry entry)
+    {
+        if (_descriptor is null) return null;
+
+        string baseName = entry.Name;
+        if (baseName.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        {
+            baseName = baseName[..^3];
+        }
+
+        if (_descriptor.NamePattern == ContentNamePattern.Plain)
+        {
+            // Static pages — no date, no parsing. Sort by name alphabetically.
+            return new Row(entry.Name, entry.Sha, entry.Path, baseName, DateTime.MinValue);
+        }
+
+        string[] parts = baseName.Split('-', _descriptor.NamePattern == ContentNamePattern.YearMonth ? 3 : 4);
+        int requiredParts = _descriptor.NamePattern == ContentNamePattern.YearMonth ? 3 : 4;
+        if (parts.Length < requiredParts) return null;
+
+        if (!int.TryParse(parts[0], out int year) ||
+            !int.TryParse(parts[1], out int month))
+        {
+            return null;
+        }
+
+        DateTime date;
+        string slug;
+        if (_descriptor.NamePattern == ContentNamePattern.YearMonth)
+        {
+            if (!DateTime.TryParseExact(
+                $"{year}-{month}",
+                "yyyy-M",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out date))
+            {
+                return null;
+            }
+
+            slug = parts[2];
+        }
+        else
+        {
+            if (!int.TryParse(parts[2], out int day)) return null;
+            if (!DateTime.TryParseExact(
+                $"{year}-{month}-{day}",
+                "yyyy-M-d",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out date))
+            {
+                return null;
+            }
+
+            slug = parts[3];
+        }
+
+        return new Row(entry.Name, entry.Sha, entry.Path, slug, date);
+    }
+
+    private void RequestDelete(Row row) => _pendingDelete = row.FileName;
+    private void CancelDelete() => _pendingDelete = null;
+
+    private async Task ConfirmDeleteAsync(Row row)
+    {
+        if (_descriptor is null) return;
+        _busy = true;
+        try
+        {
+            await Api.DeleteFileAsync(row.Path, row.Sha,
+                commitMessage: $"admin: delete {_descriptor.Slug} entry {row.Slug}");
+            _rows.Remove(row);
+            _pendingDelete = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed record Row(string FileName, string Sha, string Path, string Slug, DateTime Date);
+}

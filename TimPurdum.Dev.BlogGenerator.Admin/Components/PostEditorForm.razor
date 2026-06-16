@@ -1,0 +1,23 @@
+@using TimPurdum.Dev.BlogGenerator.Admin.FrontMatter
+@* Default Post frontmatter form. The fields here mirror PostFrontMatter exactly.
+   Consumer sites can replace this entirely by registering their own form type via
+   opts.ConfigurePost(p => p.EditorFormType = typeof(MyCustomPostForm)). *@
+
+<div class="form-grid">
+    <FormRow Label="Title" Required="true" For="post-title">
+        <input id="post-title" class="form-input" type="text" required @bind="Frontmatter.Title" />
+    </FormRow>
+    <FormRow Label="Subtitle" Hint="Optional, shown under the title." For="post-subtitle">
+        <input id="post-subtitle" class="form-input" type="text" @bind="Frontmatter.Subtitle" />
+    </FormRow>
+    <FormRow Label="Author" Hint="Optional. Falls back to the site author if blank." For="post-author">
+        <input id="post-author" class="form-input" type="text" @bind="Frontmatter.Author" />
+    </FormRow>
+    <FormRow Label="Description" Hint="Optional, used in OG meta and feed." For="post-description">
+        <textarea id="post-description" class="form-input" rows="3" @bind="Frontmatter.Description"></textarea>
+    </FormRow>
+</div>
+
+@code {
+    [Parameter] public required PostFrontMatter Frontmatter { get; set; }
+}
