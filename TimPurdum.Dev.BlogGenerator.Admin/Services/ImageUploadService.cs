@@ -48,6 +48,23 @@ public sealed class ImageUploadService(GitHubApiService api, IJSRuntime js, Blog
         return publicUrl;
     }
 
+    /// <summary>
+    /// Upload a raw byte array (e.g. from JS interop) — skips the IBrowserFile layer.
+    /// Resize + GitHub PUT are identical to <see cref="UploadAsync"/>.
+    /// </summary>
+    public async Task<string> UploadRawAsync(byte[] sourceBytes, string fileName, string subfolder,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(subfolder)) throw new ArgumentException("Subfolder is required.", nameof(subfolder));
+        string folder = subfolder.Trim('/');
+        byte[] resized = await js.InvokeAsync<byte[]>("adminResizeImage", ct, sourceBytes, MaxWidth, JpegQuality);
+        string normalizedName = NormalizeFileName(fileName);
+        string repoPath = $"{options.ImagesRoot.TrimEnd('/')}/{folder}/{normalizedName}";
+        string publicUrl = $"{options.PublicImageUrlPrefix.TrimEnd('/')}/{folder}/{normalizedName}";
+        await api.PutBytesAsync(repoPath, resized, $"admin: upload image {folder}/{normalizedName}", null, ct);
+        return publicUrl;
+    }
+
     /// <summary>List the images currently committed under <paramref name="subfolder"/>.</summary>
     public async Task<IReadOnlyList<ImageEntry>> ListAsync(string subfolder, CancellationToken ct = default)
     {
