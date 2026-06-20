@@ -621,14 +621,16 @@ public static class MarkupParser
         string urlPath = match.Groups["path"].Value.Trim('"');
         
         Match pageTitleMatch = PageTitleRegex.Match(content);
-        string title = pageTitleMatch.Success 
-            ? pageTitleMatch.Groups["title"].Value.Trim() 
+        string title = pageTitleMatch.Success
+            ? pageTitleMatch.Groups["title"].Value.Trim()
             : fileName.PascalToTitleCase();
-        
-        if (title == "@BlogSettings.SiteTitle")
-        {
-            title = Generator.BlogSettings!.SiteTitle;
-        }
+
+        // Substitute any @BlogSettings.<Property> tokens with their values. Note the parser runs
+        // BEFORE Razor compilation, so this isn't a real expression evaluator — anything outside the
+        // BlogSettings prefix (page-local fields, navlinks, computed properties) is left untouched
+        // and will render literally. Authors needing dynamic titles should keep PageTitle a literal
+        // string or stick to BlogSettings.* references.
+        title = SubstituteBlogSettingsTokens(title);
         
         List<string> razorLines = content.Split(Environment.NewLine).ToList();
         List<string> resultLines = [];
@@ -802,6 +804,37 @@ public static class MarkupParser
                  """;
     }
     
+    /// <summary>
+    /// Replaces any <c>@BlogSettings.Property</c> token inside <paramref name="text"/> with the
+    /// corresponding string property's value from the configured <see cref="BlogSettings"/>. Tokens
+    /// that don't resolve to a public string property are left in place verbatim — they were not
+    /// recognized, so the author probably wanted a literal or used an unsupported expression.
+    /// </summary>
+    /// <remarks>
+    /// Handles both whole-expression titles (<c>&lt;PageTitle&gt;@BlogSettings.SiteTitle&lt;/PageTitle&gt;</c>)
+    /// and compound forms (<c>&lt;PageTitle&gt;Welcome — @BlogSettings.SiteTitle&lt;/PageTitle&gt;</c>).
+    /// Page-local fields, navlinks, and other non-BlogSettings expressions are NOT evaluated; the
+    /// parser runs before Razor compilation, so it can't access page-instance state.
+    /// When a matching <see cref="BlogSettings"/> string property exists but its value is <see langword="null"/>,
+    /// the token is replaced with an empty string.
+    /// </remarks>
+    private static string SubstituteBlogSettingsTokens(string text)
+    {
+        BlogSettings? settings = Generator.BlogSettings;
+        if (settings is null || string.IsNullOrEmpty(text)) return text;
+
+        return BlogSettingsTokenRegex.Replace(text, match =>
+        {
+            string propName = match.Groups["prop"].Value;
+            System.Reflection.PropertyInfo? prop = typeof(BlogSettings).GetProperty(propName);
+            if (prop is not null && prop.PropertyType == typeof(string))
+            {
+                return (prop.GetValue(settings) as string) ?? string.Empty;
+            }
+            return match.Value;
+        });
+    }
+
     private static readonly Regex PagePathRegex = new(@"^@page ""(?<path>.+?)""",
         RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex ComponentStartRegex = new(@"^\s*<(?<componentName>[A-Z][A-Za-z]+)",
@@ -814,4 +847,6 @@ public static class MarkupParser
         RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex ScriptEndRegex = new("</script>",
         RegexOptions.Compiled | RegexOptions.Singleline);
+    private static readonly Regex BlogSettingsTokenRegex = new(@"@BlogSettings\.(?<prop>[A-Za-z][A-Za-z0-9]*)(?![.\(\[])",
+        RegexOptions.Compiled);
 }
