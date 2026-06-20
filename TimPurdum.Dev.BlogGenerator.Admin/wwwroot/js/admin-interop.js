@@ -16,6 +16,16 @@
 
 window.adminCreateRichEditor = function (element, initialValue, dotnetRef, options) {
     options = options || {};
+
+    function blobToBase64(blob) {
+        return blob.arrayBuffer().then(function (buf) {
+            var bytes = new Uint8Array(buf);
+            var binary = "";
+            for (var i = 0; i < bytes.length; i++) { binary += String.fromCharCode(bytes[i]); }
+            return btoa(binary);
+        });
+    }
+
     var editor = new toastui.Editor({
         el: element,
         initialValue: initialValue || "",
@@ -30,6 +40,18 @@ window.adminCreateRichEditor = function (element, initialValue, dotnetRef, optio
             ["table", "image", "link"],
             ["code", "codeblock"]
         ],
+        hooks: {
+            addImageBlobHook: function (blob, callback) {
+                blobToBase64(blob).then(function (b64) {
+                    return dotnetRef.invokeMethodAsync("UploadEditorImageAsync", b64, blob.name || "upload.jpg");
+                }).then(function (url) {
+                    callback(url, "");
+                }).catch(function (e) {
+                    console.error("Editor image upload failed:", e);
+                    callback("", "");
+                });
+            }
+        },
         events: {
             change: function () {
                 try { dotnetRef.invokeMethodAsync("OnEditorChanged", editor.getMarkdown()); }

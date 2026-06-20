@@ -1,4 +1,6 @@
 @inject IJSRuntime JS
+@inject ImageUploadService ImageSvc
+@inject BlogAdminOptions Options
 @implements IAsyncDisposable
 
 <div class="md-editor-host" @ref="_host"></div>
@@ -53,6 +55,20 @@
         }
         Value = markdown ?? "";
         await ValueChanged.InvokeAsync(Value);
+    }
+
+    /// <summary>
+    /// Called from JS when the user drops or selects an image file via the Toast UI toolbar.
+    /// <paramref name="base64Bytes"/> is the raw source file Base64-encoded; the upload service
+    /// resizes it and commits it to GitHub exactly like a manual upload from the Images page.
+    /// Returns the public URL that the editor inserts as the image src.
+    /// </summary>
+    [JSInvokable]
+    public async Task<string> UploadEditorImageAsync(string base64Bytes, string fileName)
+    {
+        byte[] bytes = Convert.FromBase64String(base64Bytes);
+        string folder = Options.ImageFolders.FirstOrDefault() ?? "images";
+        return await ImageSvc.UploadRawAsync(bytes, fileName, folder);
     }
 
     public async ValueTask DisposeAsync()
