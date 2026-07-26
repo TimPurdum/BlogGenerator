@@ -17,6 +17,13 @@
     --admin-error:        #8A2A2A;
     --admin-error-veil:   rgba(138, 42, 42, 0.10);
 
+    /* Foreground pairs for the two filled backgrounds. Kept as tokens so a filled button never has to
+       be re-colored inside a `prefers-color-scheme` block — a blanket `.admin-button { color: ... }`
+       override there also lands on `.admin-button--ghost`, which is transparent, and paints its label
+       the same near-black as the page behind it. */
+    --admin-on-accent:    #1A1A1A;
+    --admin-on-dark:      #FAFAF5;
+
     --font-serif: 'Cormorant Garamond', Georgia, serif;
     --font-sans:  'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
@@ -35,6 +42,8 @@
         --admin-muted:       rgba(245, 240, 232, 0.62);
         --admin-faint:       rgba(245, 240, 232, 0.10);
         --admin-accent-soft: rgba(201, 168, 76, 0.45);
+        --admin-on-accent:   #0A0A0A;
+        --admin-on-dark:     #F5F0E8;
     }
 }
 
@@ -197,7 +206,7 @@ a:hover { color: var(--admin-accent); }
     letter-spacing: var(--tracking-small-caps);
     padding: 0.65rem 1.25rem;
     background: var(--admin-accent);
-    color: #1A1A1A;
+    color: var(--admin-on-accent);
     border: 1px solid var(--admin-accent);
     cursor: pointer;
     text-decoration: none;
@@ -207,7 +216,7 @@ a:hover { color: var(--admin-accent); }
 .admin-button:hover {
     background: var(--admin-burgundy);
     border-color: var(--admin-burgundy);
-    color: #FAFAF5;
+    color: var(--admin-on-dark);
     transform: translateY(-1px);
 }
 .admin-button:active { transform: none; }
@@ -226,10 +235,6 @@ a:hover { color: var(--admin-accent); }
     background: var(--admin-accent-veil);
     border-color: var(--admin-accent);
     color: var(--admin-text);
-}
-@media (prefers-color-scheme: dark) {
-    .admin-button { color: #0A0A0A; }
-    .admin-button:hover { color: #F5F0E8; }
 }
 
 /* --- page heading ------------------------------------------ */
@@ -489,7 +494,9 @@ a:hover { color: var(--admin-accent); }
 .admin-button--danger {
     background: var(--admin-error);
     border-color: var(--admin-error);
-    color: var(--admin-bg);
+    /* Deliberately not --admin-bg: that reads as near-black in dark mode, and dark-on-#8A2A2A is a
+       2.3:1 label. Both --admin-error and its burgundy hover are dark, so the light pair wins twice. */
+    color: var(--admin-on-dark);
 }
 .admin-button--danger:hover {
     background: var(--admin-burgundy);

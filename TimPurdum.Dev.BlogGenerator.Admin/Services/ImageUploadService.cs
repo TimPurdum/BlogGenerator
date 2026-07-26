@@ -78,6 +78,22 @@ public sealed class ImageUploadService(GitHubApiService api, IJSRuntime js, Blog
             .ToList();
     }
 
+    /// <summary>
+    /// True when <see cref="BlogAdminOptions.ImagesRoot"/> actually resolves to a directory in the repo.
+    /// <para>
+    /// Worth checking because <see cref="ListAsync"/> can't tell a typo from an empty folder: git stores
+    /// no empty trees, so GitHub's Contents API 404s for a genuinely-empty subfolder exactly as it does
+    /// for one that was never there, and <see cref="GitHubApiService.ListDirectoryAsync"/> maps both to
+    /// an empty list. The root, however, must exist — if it doesn't, every folder reads as empty and the
+    /// UI should say "misconfigured" rather than "no images yet".
+    /// </para>
+    /// </summary>
+    public async Task<bool> ImagesRootExistsAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<RepoEntry> entries = await api.ListDirectoryAsync(options.ImagesRoot.TrimEnd('/'), ct);
+        return entries.Count > 0;
+    }
+
     /// <summary>Delete an image at <paramref name="publicUrl"/>.</summary>
     public async Task DeleteAsync(string publicUrl, string sha, CancellationToken ct = default)
     {
@@ -109,7 +125,7 @@ public sealed class ImageUploadService(GitHubApiService api, IJSRuntime js, Blog
     private static bool LooksLikeImage(string fileName)
     {
         string ext = Path.GetExtension(fileName).ToLowerInvariant();
-        return ext is ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" or ".avif";
+        return ext is ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" or ".avif" or ".svg";
     }
 }
 

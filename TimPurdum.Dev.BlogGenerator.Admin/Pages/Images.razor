@@ -54,6 +54,18 @@
                 <button class="admin-button admin-button--ghost" @onclick="LoadAsync">Try again</button>
             </div>
         }
+        else if (_rootMissing)
+        {
+            <div class="alert alert--error" role="alert">
+                <p>
+                    <strong>Image root not found.</strong>
+                    <code>@Options.ImagesRoot</code> doesn't exist in
+                    <code>@Options.Repo.Owner/@Options.Repo.Repo</code>, so every folder lists as empty.
+                </p>
+                <p>Fix <code>ImagesRoot</code> in the admin's <code>AddBlogAdmin</code> call.</p>
+                <button class="admin-button admin-button--ghost" @onclick="LoadAsync">Try again</button>
+            </div>
+        }
         else if (_images.Count == 0)
         {
             <p class="empty">No images in <code>@_folder/</code> yet.</p>
@@ -113,6 +125,7 @@
     private string? _uploadError;
     private string? _pendingDelete;
     private string? _lastCopied;
+    private bool _rootMissing;
     private List<ImageEntry> _images = [];
 
     /// <summary>Cancels the "Copied to clipboard" toast's auto-dismiss timer when the component
@@ -137,9 +150,16 @@
     {
         _loading = true;
         _listError = null;
+        _rootMissing = false;
         try
         {
             _images = (await ImageSvc.ListAsync(_folder)).ToList();
+            // An empty result is ambiguous (see ImageUploadService.ImagesRootExistsAsync). Only spend the
+            // extra request when there's nothing to show, and only to rule out a bad ImagesRoot.
+            if (_images.Count == 0)
+            {
+                _rootMissing = !await ImageSvc.ImagesRootExistsAsync();
+            }
         }
         catch (Exception ex)
         {

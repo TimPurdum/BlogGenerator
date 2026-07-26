@@ -11,8 +11,8 @@
             their content types (Post + Page are built in) and get the full editor, list pages, image
             library, and deploy banner.</Description>
         <PackageTags>Blazor;Blog;Admin;CMS;WebAssembly;GitHub</PackageTags>
-        <PackageVersion>1.2.1-preview</PackageVersion>
-        <Version>1.2.1-preview</Version>
+        <PackageVersion>1.2.2-preview</PackageVersion>
+        <Version>1.2.2-preview</Version>
         <Authors>Tim Purdum</Authors>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <RepositoryUrl>https://github.com/TimPurdum/BlogGenerator</RepositoryUrl>
