@@ -85,7 +85,10 @@
     /// AddBlogAdmin. Pass a specific array to scope the picker to a single content type.</summary>
     [Parameter] public string[]? Folders { get; set; }
 
-    /// <summary>Folder selected by default when the picker opens. Defaults to the first folder available.</summary>
+    /// <summary>Folder selected by default when the picker opens. Matched against the resolved folder
+    /// list either in full ("images/gallery") or by its last segment ("gallery") — call sites shouldn't
+    /// have to know whether a site nests its image folders. Falls back to the first available folder
+    /// when there's no match.</summary>
     [Parameter] public string? DefaultFolder { get; set; }
 
     /// <summary>Fires when the user picks (or successfully uploads) an image. Value is the public URL.</summary>
@@ -110,10 +113,8 @@
 
     private async Task Open()
     {
-        var resolvedFolders = ResolvedFolders;
-        _folder = DefaultFolder is not null && resolvedFolders.Contains(DefaultFolder)
-            ? DefaultFolder
-            : resolvedFolders[0];
+        IReadOnlyList<string> resolvedFolders = ResolvedFolders;
+        _folder = ResolveDefaultFolder(resolvedFolders);
         _open = true;
         _uploadError = null;
         _listError = null;
@@ -121,6 +122,19 @@
     }
 
     private void Close() => _open = false;
+
+    /// <summary>Picks the folder the dialog opens on: an exact <see cref="DefaultFolder"/> match wins,
+    /// then a last-segment match (so "gallery" finds "images/gallery"), then the first folder.</summary>
+    private string ResolveDefaultFolder(IReadOnlyList<string> folders)
+    {
+        if (string.IsNullOrWhiteSpace(DefaultFolder)) return folders[0];
+        string wanted = DefaultFolder.Trim('/');
+
+        return folders.FirstOrDefault(f => string.Equals(f.Trim('/'), wanted, StringComparison.OrdinalIgnoreCase))
+            ?? folders.FirstOrDefault(f => string.Equals(
+                f.Trim('/').Split('/')[^1], wanted, StringComparison.OrdinalIgnoreCase))
+            ?? folders[0];
+    }
 
     private async Task LoadAsync()
     {
