@@ -8,8 +8,17 @@
 @code {
     [Parameter] public string Value { get; set; } = "";
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
-    /// <summary>"wysiwyg" or "markdown" — what mode the editor opens in. Users can toggle either way from the toolbar.</summary>
-    [Parameter] public string StartMode { get; set; } = "wysiwyg";
+
+    /// <summary>
+    /// What mode the editor opens in. Users can toggle either way from the toolbar.
+    /// <list type="bullet">
+    /// <item><c>"auto"</c> (default) — markdown for documents containing raw HTML, WYSIWYG otherwise.
+    /// Both modes preserve embedded HTML, but only markdown mode's preview pane <em>renders</em> it,
+    /// so that's the useful mode for a post built out of HTML cards.</item>
+    /// <item><c>"wysiwyg"</c> / <c>"markdown"</c> — pin the mode regardless of content.</item>
+    /// </list>
+    /// </summary>
+    [Parameter] public string StartMode { get; set; } = "auto";
     /// <summary>CSS height passed to Toast UI (e.g. "32rem" or "500px").</summary>
     [Parameter] public string Height { get; set; } = "32rem";
 
@@ -17,8 +26,6 @@
     private DotNetObjectReference<MarkdownEditor>? _selfRef;
     private IJSObjectReference? _editorHandle;
     private bool _ready;
-    /// <summary>True while we're applying a Value change FROM the parent so we don't loop the change event back at them.</summary>
-    private bool _suppressNextChange;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -34,12 +41,16 @@
 
         // Parent pushed a new Value (e.g. switching between entries on the same Editor page).
         // Push it down to Toast UI if it differs from what the editor currently holds.
+        // getMarkdown answers with the JS side's authoritative copy — in WYSIWYG the editor's
+        // own buffer holds a protected form whose raw HTML is stood in for by carriers, so
+        // comparing against that instead would report a spurious difference every time.
         if (_ready && _editorHandle is not null)
         {
             string current = await _editorHandle.InvokeAsync<string>("getMarkdown");
             if (current != (Value ?? ""))
             {
-                _suppressNextChange = true;
+                // No echo guard needed here: the JS wrapper suppresses change events raised by
+                // its own programmatic writes, so this can't loop back through OnEditorChanged.
                 await _editorHandle.InvokeVoidAsync("setMarkdown", Value ?? "");
             }
         }
@@ -48,11 +59,6 @@
     [JSInvokable]
     public async Task OnEditorChanged(string markdown)
     {
-        if (_suppressNextChange)
-        {
-            _suppressNextChange = false;
-            return;
-        }
         Value = markdown ?? "";
         await ValueChanged.InvokeAsync(Value);
     }

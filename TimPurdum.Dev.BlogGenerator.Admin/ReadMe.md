@@ -104,6 +104,35 @@ boot so the redirect wins.
 Ship an `index.html`-shaped `404.html` inside the admin's own `wwwroot` too, with the same
 `<base href>`. Hosts that *do* resolve a nested 404 (and local `dotnet run`) will use it.
 
+## Posts that embed raw HTML
+
+Markdown posts often carry hand-written HTML — a styled `<div>` card, a `<style>` block, an
+inline `<span>`. Toast UI's WYSIWYG mode is backed by ProseMirror, which has no node type for
+arbitrary HTML and therefore **drops it** when converting back to markdown. Left alone, one
+keystroke in WYSIWYG mode is enough to permanently flatten a card-heavy post.
+
+The editor wrapper handles this for you; there is nothing to configure. Worth knowing:
+
+- **Raw HTML is preserved in both modes.** Entering WYSIWYG swaps each HTML region for a
+  lossless stand-in — block HTML becomes a fenced code block tagged `raw-html`, inline HTML
+  becomes a short token — and leaving restores the original text verbatim. Regions are located
+  with the editor's own CommonMark parse, so detection matches what the renderer considers HTML.
+- **WYSIWYG shows that HTML as source, not as rendered output.** It stays editable as text.
+  Deleting a stand-in deletes the HTML it represents, which is the intended behaviour.
+- **`<style>` blocks are applied in the preview pane.** Toast UI's sanitizer strips them from
+  the rendered output, so the CSS is re-injected separately, rewritten to be confined to the
+  preview. A post carrying `body { display: none }` cannot restyle the admin around it, and
+  `@import` is dropped rather than scoped so preview rendering never reaches the network.
+- **`MarkdownEditor.StartMode` defaults to `"auto"`** — markdown mode for documents containing
+  raw HTML (its preview pane renders the cards), WYSIWYG otherwise. Pass `"markdown"` or
+  `"wysiwyg"` to pin it.
+
+One caveat, unchanged from before and unrelated to HTML: a round-trip through WYSIWYG applies
+Toast UI's markdown canonicalization to the *whole* document — `-` list bullets become `*`,
+`---` thematic breaks become `***`, CRLF becomes LF, trailing spaces go. Content and rendered
+output are unaffected, but the git diff will show those lines. Markdown mode does not
+canonicalize, so it round-trips a document untouched.
+
 ## Adding custom content types
 
 ```csharp
