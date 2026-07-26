@@ -75,13 +75,17 @@ the URL on the way in; the consumer supplies the outbound half in the **site-lev
 ```html
 <script>
     (function () {
+        var MOUNT = "/admin/";
         var path = window.location.pathname || "/";
-        if (path.indexOf("/admin/") === 0 || path === "/admin") {
+        // Reaching exactly the mount point here means the admin isn't deployed — its index.html
+        // would have been served instead — so bouncing would redirect to itself forever. Fall
+        // through to the public 404 instead.
+        if (path !== MOUNT && (path.indexOf(MOUNT) === 0 || path === "/admin")) {
             try {
                 sessionStorage.setItem("admin.spa.redirect",
                     path + window.location.search + window.location.hash);
             } catch (e) { /* private mode: falls through to the dashboard */ }
-            window.location.replace("/admin/");
+            window.location.replace(MOUNT);
             return;
         }
         // ...public 404 content below
