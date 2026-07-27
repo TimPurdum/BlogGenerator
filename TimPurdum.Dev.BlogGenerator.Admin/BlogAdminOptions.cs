@@ -34,6 +34,29 @@ public sealed class BlogAdminOptions
     /// the public site exposes <c>wwwroot/images/*</c> at that root.</summary>
     public string PublicImageUrlPrefix { get; set; } = "/images";
 
+    /// <summary>
+    /// Stylesheets from the public site to apply inside the editor's preview pane, so a draft
+    /// previews close to how it will actually publish. Fetched at runtime and rewritten to be
+    /// confined to the preview — they cannot restyle the admin around it. Same-origin URLs
+    /// (the normal case, since the admin is usually staged under the site it edits); a
+    /// cross-origin URL needs CORS to permit the read.
+    /// <para>
+    /// Defaults to the conventional <c>/css/app.css</c>. Set to an empty list to switch the
+    /// feature off, or list several to match a site that splits its CSS.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> PreviewStylesheets { get; set; } = ["/css/app.css"];
+
+    /// <summary>
+    /// CSS classes to put on the preview's content element, matching whatever wrapper the site's
+    /// own templates render post bodies into. Site rules written against that wrapper — e.g.
+    /// <c>.post-content img { ... }</c> — only match in the preview if this lines up.
+    /// <para>
+    /// Defaults to BlogGenerator's stock post layout (<c>post-content e-content</c>).
+    /// </para>
+    /// </summary>
+    public string PreviewContentClasses { get; set; } = "post-content e-content";
+
     internal List<IContentTypeDescriptor> ContentTypes { get; } = [];
 
     internal Action<DefaultContentTypeConfig<PostFrontMatter>>? PostConfig { get; private set; }

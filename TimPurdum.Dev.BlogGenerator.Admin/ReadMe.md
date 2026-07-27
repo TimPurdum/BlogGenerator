@@ -140,6 +140,44 @@ What this means in practice:
 - **Tables are hand-edited.** There's no cell-by-cell table UI; the toolbar button inserts a
   markdown table skeleton.
 
+## Previewing with the live site's styles
+
+The preview pane pulls in the public site's own stylesheets, so a draft previews close to how
+it will actually publish — real typography, colours, link styling, code blocks and image rules
+rather than Toast UI's generic defaults.
+
+```csharp
+opts.PreviewStylesheets = ["/css/app.css"];        // default
+opts.PreviewContentClasses = "post-content e-content";  // default
+```
+
+`PreviewStylesheets` is fetched at runtime (same-origin; a cross-origin URL needs CORS to
+permit the read). Set it to an empty list to turn the feature off. `PreviewContentClasses` is
+put on the preview's content element so site rules written against the template's wrapper —
+`.post-content img { ... }` and the like — match in the preview too; change it if your post
+layout wraps content differently.
+
+Site CSS is rewritten before it is applied, which is what makes injecting a whole foreign
+stylesheet into the admin safe:
+
+- **Every selector is confined to the preview pane.** Nothing can restyle the admin around it.
+- **`html` / `body` / `:root` rules are folded onto the preview container** rather than left to
+  match nothing. This is what carries the site's fonts, colours and custom properties across —
+  most of its look lives in those rules.
+- **Viewport declarations are dropped from those page-level rules** — `display`, `position`,
+  `height`/`width` and their min/max forms, the flex properties, `overflow`. On a real page
+  they lay out the viewport; pointed at a pane inside another app they just do damage
+  (`min-height: 100vh` inflates the pane, `display: flex` reflows the post's blocks). A rule
+  like `body .thing` is a descendant rule and keeps everything.
+- **Relative `url()` references are made absolute** against wherever the stylesheet was fetched
+  from, so background images and fonts don't re-point at the admin's own path.
+- **`@import` is dropped** rather than followed, so preview rendering never reaches the network.
+- A stylesheet that 404s or can't be parsed logs a warning and is skipped; the editor is
+  unaffected.
+
+Ordering matches the published page: the site's CSS goes down first and a post's own `<style>`
+block overrides it.
+
 ### Upgrading from 1.2.x
 
 `MarkdownEditor.StartMode` has been **removed**. It selected between WYSIWYG and markdown, and

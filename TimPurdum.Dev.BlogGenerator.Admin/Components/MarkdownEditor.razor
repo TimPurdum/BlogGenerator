@@ -24,7 +24,12 @@
             _selfRef = DotNetObjectReference.Create(this);
             _editorHandle = await JS.InvokeAsync<IJSObjectReference>(
                 "adminCreateRichEditor", _host, Value ?? "", _selfRef,
-                new { height = Height });
+                new
+                {
+                    height = Height,
+                    siteStylesheets = Options.PreviewStylesheets,
+                    contentClasses = Options.PreviewContentClasses
+                });
             _ready = true;
             return;
         }
