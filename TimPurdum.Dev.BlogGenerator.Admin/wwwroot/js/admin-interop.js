@@ -16,26 +16,27 @@
 //     API — resizing in the browser keeps repo bandwidth small and content lean.
 //
 // ---------------------------------------------------------------------------
-// Why the editor is wrapped rather than used directly
+// Why the editor is markdown-only
 // ---------------------------------------------------------------------------
 //
-// Toast UI's WYSIWYG mode is backed by ProseMirror, whose schema has no node for arbitrary
-// raw HTML. Any HTML a post embeds is therefore *discarded* the moment WYSIWYG converts the
-// document back to markdown — silently, and with no undo path. Measured on this site's own
-// content, a post built out of styled <div> cards lost 4,683 of 14,405 characters (every
-// <div> wrapper, every inline style attribute, and the whole <style> block) after a single
-// keystroke in WYSIWYG mode.
+// The editor deliberately runs in markdown mode with a live preview pane, and Toast UI's
+// WYSIWYG mode is switched off entirely (`hideModeSwitch`). WYSIWYG is backed by ProseMirror,
+// whose schema has no node for arbitrary raw HTML, so any HTML a post embeds is discarded the
+// moment it converts back to markdown. Measured on real content here, a post built out of
+// styled <div> cards lost 4,683 of 14,405 characters after a single keystroke in WYSIWYG.
 //
-// Configuring the problem away isn't possible: `customHTMLRenderer` can round-trip a <div>
-// but reorders its attributes and collapses its newlines, and `htmlSchemaMap` doesn't apply
-// to markdown-sourced HTML at all. The only construct Toast UI round-trips byte-for-byte is
-// the fenced code block.
+// That was survivable — an earlier revision bracketed WYSIWYG with a protection transform
+// that swapped each HTML region for a lossless carrier and restored it on the way out. But
+// the two-pane markdown editor already delivers what WYSIWYG is for (seeing rendered output
+// while you type), does it without flattening HTML, and unlike WYSIWYG it returns the
+// document byte-for-byte — no canonicalizing `-` bullets to `*`, `---` to `***`, or CRLF to
+// LF on every save. Keeping both modes meant carrying ~200 lines of state machinery, tied to
+// Toast UI internals, purely to stop one of them destroying content.
 //
-// So AdminRawHtml below brackets WYSIWYG with a transform: every raw-HTML region is swapped
-// for a lossless carrier on the way in and restored verbatim on the way out, with the real
-// markdown held outside the editor as the authoritative copy. Regions are located with
-// ToastMark's own CommonMark parse (via `sourcepos`), not a hand-rolled HTML scanner, so
-// "what counts as raw HTML" always matches what the renderer thinks.
+// The one thing WYSIWYG did better was paste: it converts pasted rich HTML into markdown,
+// where the markdown pane would take the clipboard's plain-text flavour and lose every
+// heading, link and list. That capability is kept below, without the mode — see the paste
+// handler in adminCreateRichEditor.
 //
 // Separately, Toast UI's sanitizer strips <style> elements from the preview pane, which is
 // why class-based cards render unstyled there. AdminRawHtml re-injects that CSS scoped to
@@ -100,40 +101,23 @@ var ADMIN_SPA_KEY = "admin.spa.redirect";
 })();
 
 // ---------------------------------------------------------------------------
-// AdminRawHtml — raw-HTML preservation across the WYSIWYG round-trip.
+// AdminRawHtml — helpers for the raw HTML that markdown posts embed.
 //
-// protect()  markdown  ->  WYSIWYG-safe markdown  (HTML swapped for carriers)
-// restore()  WYSIWYG-safe markdown  ->  markdown  (carriers swapped back)
+// Only one job remains here: post-authored <style> blocks. Toast UI's sanitizer strips
+// <style> elements out of the preview pane, so cards built on CSS classes render unstyled.
+// We pull that CSS out of the document ourselves and re-inject it, rewritten so it can only
+// apply inside the preview.
 //
-// Block-level HTML becomes a fenced code block tagged `raw-html`, which keeps the markup
-// visible and editable as source. Inline HTML becomes a short opaque token backed by a side
-// table, because an inline run has no block to hold it. Deleting a carrier deletes the HTML
-// it stands for — that is the intended behaviour, not a failure mode.
+// Finding the <style> blocks goes through ToastMark's own CommonMark parse rather than a
+// regex over the source. That distinction matters: a post *documenting* CSS inside a fenced
+// code block must not have that CSS actually applied to the preview, and the parser is what
+// tells the two apart.
 // ---------------------------------------------------------------------------
 var AdminRawHtml = (function () {
-    var FENCE_INFO = "raw-html";
-    var TOKEN_RE = /`\[\[raw-html:(\d+)\]\]`/g;
 
-    // Byte offset of the first character of each line, so ToastMark's 1-based [line, col]
-    // positions can be turned into string indices. Works for LF and CRLF alike: a CR stays
-    // inside the preceding line's content, which is exactly how the parser counts columns.
-    function lineStarts(text) {
-        var starts = [0];
-        for (var i = 0; i < text.length; i++) {
-            if (text.charCodeAt(i) === 10) { starts.push(i + 1); }
-        }
-        return starts;
-    }
-
-    // sourcepos is [[startLine, startCol], [endLine, endCol]] — 1-based, end inclusive.
-    function toRange(starts, sp) {
-        return { start: starts[sp[0][0] - 1] + sp[0][1] - 1, end: starts[sp[1][0] - 1] + sp[1][1] };
-    }
-
-    // Parse `markdown` purely to observe node positions. Toast UI has no standalone parser
-    // export, so we drive a throwaway hidden editor and let its render pass call us back;
-    // the renderers return nothing, since the HTML output is discarded. ~3ms on a 14 KB post,
-    // and this only runs on mode switches and idle debounces, never per keystroke.
+    // Parse `markdown` purely to observe its nodes. Toast UI has no standalone parser export,
+    // so we drive a throwaway hidden editor and let its render pass call us back; the
+    // renderers return nothing, since the HTML output is discarded.
     function parseNodes(markdown, renderers) {
         var host = document.createElement("div");
         host.style.display = "none";
@@ -149,112 +133,31 @@ var AdminRawHtml = (function () {
                 customHTMLRenderer: renderers
             }).destroy();
         } catch (e) {
-            // A parse failure must never cost the user their content: callers treat an empty
-            // region list as "nothing to protect", which leaves the markdown untouched.
-            console.error("Raw-HTML scan failed; leaving the document unprotected:", e);
+            // Never let a parse failure cost the user anything: callers treat an empty result
+            // as "no embedded CSS", which just leaves the preview unstyled.
+            console.error("Raw-HTML scan failed:", e);
         } finally {
             host.remove();
         }
     }
 
-    // Every raw-HTML region ToastMark finds, in document order.
+    // The literal text of every raw-HTML region in the document, block and inline.
     function findRawHtml(markdown) {
         var found = [];
         parseNodes(markdown, {
-            htmlBlock: function (node) {
-                found.push({ kind: "block", sp: node.sourcepos, literal: node.literal });
-                return [{ type: "html", content: "" }];
-            },
-            htmlInline: function (node) {
-                found.push({ kind: "inline", sp: node.sourcepos, literal: node.literal });
-                return [{ type: "html", content: "" }];
-            }
+            htmlBlock: function (node) { found.push(node.literal); return [{ type: "html", content: "" }]; },
+            htmlInline: function (node) { found.push(node.literal); return [{ type: "html", content: "" }]; }
         });
         return found;
-    }
-
-    // A fence has to be longer than the longest backtick run in its payload, or the payload
-    // could close it early. Counting runs anywhere (not just at line starts) is stricter than
-    // CommonMark requires and costs nothing.
-    function fenceFor(literal) {
-        var longest = 0, run = 0;
-        for (var i = 0; i < literal.length; i++) {
-            if (literal.charAt(i) === "`") { run++; if (run > longest) { longest = run; } }
-            else { run = 0; }
-        }
-        return new Array(Math.max(3, longest + 1) + 1).join("`");
-    }
-
-    function protect(markdown) {
-        var regions = findRawHtml(markdown);
-        if (!regions.length) { return { text: markdown, tokens: [] }; }
-
-        var starts = lineStarts(markdown);
-        var tokens = [];
-        var edits = regions.map(function (region) {
-            var range = toRange(starts, region.sp);
-            var replacement;
-            if (region.kind === "block") {
-                var fence = fenceFor(region.literal);
-                replacement = fence + FENCE_INFO + "\n" + region.literal + "\n" + fence;
-            } else {
-                replacement = "`[[raw-html:" + tokens.length + "]]`";
-                tokens.push(region.literal);
-            }
-            return { start: range.start, end: range.end, replacement: replacement };
-        });
-
-        // Splice back-to-front so earlier offsets stay valid.
-        edits.sort(function (a, b) { return b.start - a.start; });
-        var text = markdown;
-        edits.forEach(function (edit) {
-            text = text.slice(0, edit.start) + edit.replacement + text.slice(edit.end);
-        });
-        return { text: text, tokens: tokens };
-    }
-
-    function restore(text, tokens) {
-        var lines = text.split("\n");
-        var out = [];
-        var i = 0;
-        while (i < lines.length) {
-            var open = /^(`{3,})raw-html[ \t]*$/.exec(lines[i]);
-            if (!open) { out.push(lines[i]); i++; continue; }
-
-            var closing = new RegExp("^`{" + open[1].length + ",}[ \\t]*$");
-            var j = i + 1;
-            while (j < lines.length && !closing.test(lines[j])) { j++; }
-            if (j >= lines.length) {
-                // Unterminated fence — the user edited the carrier into something we can't read.
-                // Emit it verbatim rather than guessing at where the HTML was meant to end.
-                out.push(lines[i]); i++; continue;
-            }
-            out.push(lines.slice(i + 1, j).join("\n"));
-            i = j + 1;
-        }
-
-        var result = out.join("\n");
-        if (tokens.length) {
-            result = result.replace(TOKEN_RE, function (whole, index) {
-                var n = parseInt(index, 10);
-                return n >= 0 && n < tokens.length ? tokens[n] : whole;
-            });
-        }
-        return result;
-    }
-
-    // True when the document holds raw HTML, i.e. when WYSIWYG needs the protection above.
-    function hasRawHtml(markdown) {
-        return findRawHtml(markdown).length > 0;
     }
 
     // CSS from every <style> element embedded in the document's raw HTML.
     function extractStyleCss(markdown) {
         var css = [];
-        findRawHtml(markdown).forEach(function (region) {
+        findRawHtml(markdown).forEach(function (literal) {
             var re = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
             var match;
-            while ((match = re.exec(region.literal)) !== null) { css.push(match[1]); }
+            while ((match = re.exec(literal)) !== null) { css.push(match[1]); }
         });
         return css.join("\n");
     }
@@ -297,12 +200,40 @@ var AdminRawHtml = (function () {
         return "";
     }
 
+    // Convert pasted rich HTML into markdown, so dropping WYSIWYG doesn't cost us paste
+    // fidelity. There's no standalone converter in the public API, so we borrow one: a
+    // throwaway WYSIWYG instance parses the HTML into its ProseMirror document and hands
+    // back the markdown serialization. The instance is created and destroyed inside this
+    // call, so no WYSIWYG surface is ever shown to the user.
+    //
+    // setHTML runs the input through Toast UI's sanitizer on the way in.
+    function htmlToMarkdown(html) {
+        var host = document.createElement("div");
+        host.style.display = "none";
+        document.body.appendChild(host);
+        try {
+            var converter = new toastui.Editor({
+                el: host,
+                initialEditType: "wysiwyg",
+                height: "50px",
+                usageStatistics: false
+            });
+            converter.setHTML(html, false);
+            var markdown = converter.getMarkdown();
+            converter.destroy();
+            return markdown;
+        } catch (e) {
+            console.error("Paste conversion failed; falling back to plain text:", e);
+            return null;
+        } finally {
+            host.remove();
+        }
+    }
+
     return {
-        protect: protect,
-        restore: restore,
-        hasRawHtml: hasRawHtml,
         extractStyleCss: extractStyleCss,
-        scopeCss: scopeCss
+        scopeCss: scopeCss,
+        htmlToMarkdown: htmlToMarkdown
     };
 })();
 
@@ -311,22 +242,9 @@ var adminEditorSeq = 0;
 window.adminCreateRichEditor = function (element, initialValue, dotnetRef, options) {
     options = options || {};
 
-    // The authoritative markdown, held outside the editor. In WYSIWYG the editor's own buffer
-    // holds the *protected* form, so getMarkdown() there answers a different question than the
-    // one C# is asking; everything the .NET side sees comes from here instead.
-    var authoritative = initialValue || "";
-    var tokens = [];
-    // Guards re-entrancy: our own setMarkdown calls raise change/changeMode, which would
-    // otherwise be read back as user edits.
+    // Guards re-entrancy: our own setMarkdown calls raise change, which would otherwise be
+    // read back as a user edit and echoed to .NET.
     var applying = false;
-
-    // "auto" opens documents containing raw HTML in markdown mode. WYSIWYG can no longer lose
-    // that markup, but it can only show it as source, whereas markdown mode's preview pane
-    // renders the real thing — which is what someone editing a card-heavy post wants to see.
-    var startMode = options.startMode || "auto";
-    if (startMode === "auto") {
-        startMode = AdminRawHtml.hasRawHtml(authoritative) ? "markdown" : "wysiwyg";
-    }
 
     function blobToBase64(blob) {
         return blob.arrayBuffer().then(function (buf) {
@@ -347,7 +265,7 @@ window.adminCreateRichEditor = function (element, initialValue, dotnetRef, optio
 
     var postCssTimer = null;
     function syncPostCss() {
-        var css = AdminRawHtml.extractStyleCss(authoritative);
+        var css = AdminRawHtml.extractStyleCss(editor.getMarkdown());
         postCssEl.textContent = css
             ? AdminRawHtml.scopeCss(css, "." + scopeClass + " .toastui-editor-contents")
             : "";
@@ -357,34 +275,14 @@ window.adminCreateRichEditor = function (element, initialValue, dotnetRef, optio
         postCssTimer = setTimeout(function () { postCssTimer = null; syncPostCss(); }, 400);
     }
 
-    // The mode we believe we're in. Toast UI raises `change` *before* `changeMode` when the user
-    // flips modes, and by then it has already converted (and flattened) the buffer — so that
-    // change looks exactly like a user edit. Comparing the editor's live mode against this lets
-    // the handler tell the two apart: a mismatch means "conversion in flight, ignore it".
-    var currentMode = startMode;
-
-    // Load `md` into the editor in whichever representation the current mode needs.
-    function applyToEditor(md) {
-        applying = true;
-        try {
-            if (currentMode === "wysiwyg") {
-                var protectedForm = AdminRawHtml.protect(md);
-                tokens = protectedForm.tokens;
-                editor.setMarkdown(protectedForm.text, false);
-            } else {
-                tokens = [];
-                editor.setMarkdown(md, false);
-            }
-        } finally {
-            applying = false;
-        }
-    }
-
     var editor = new toastui.Editor({
         el: element,
-        initialValue: "",
-        initialEditType: startMode,
+        initialValue: initialValue || "",
+        initialEditType: "markdown",
         previewStyle: "vertical",
+        // WYSIWYG flattens embedded raw HTML and canonicalizes the whole document on the way
+        // back out. The preview pane covers what it was for; the mode itself is not offered.
+        hideModeSwitch: true,
         height: options.height || "32rem",
         usageStatistics: false,
         toolbarItems: [
@@ -408,47 +306,53 @@ window.adminCreateRichEditor = function (element, initialValue, dotnetRef, optio
         },
         events: {
             change: function () {
-                // `editor` is still unassigned if anything fires during construction.
                 if (applying || !editor) { return; }
-                // Raised by a mode conversion rather than by the user — the buffer has already
-                // been rewritten by Toast UI and is not a copy we want to trust. changeMode
-                // fires next and re-seeds from `authoritative`.
-                if (editor.isWysiwygMode() !== (currentMode === "wysiwyg")) { return; }
-
-                authoritative = currentMode === "wysiwyg"
-                    ? AdminRawHtml.restore(editor.getMarkdown(), tokens)
-                    : editor.getMarkdown();
                 schedulePostCssSync();
-                try { dotnetRef.invokeMethodAsync("OnEditorChanged", authoritative); }
+                try { dotnetRef.invokeMethodAsync("OnEditorChanged", editor.getMarkdown()); }
                 catch (e) { /* component disposed mid-edit; ignore */ }
-            },
-            // Fires after Toast UI has converted the buffer into the new mode — which, going
-            // into WYSIWYG, means it has already flattened any raw HTML. Re-seeding from
-            // `authoritative` (never from getMarkdown()) is what makes that harmless.
-            changeMode: function (mode) {
-                if (applying || !editor) { return; }
-                if (currentMode === "wysiwyg" && mode !== "wysiwyg") {
-                    // Leaving WYSIWYG: the buffer Toast UI just converted is the protected
-                    // form, so read it back through restore() to recover the user's edits
-                    // before it becomes the source of truth again.
-                    authoritative = AdminRawHtml.restore(editor.getMarkdown(), tokens);
-                }
-                currentMode = mode;
-                applyToEditor(authoritative);
             }
         }
     });
 
-    // initialValue is set through applyToEditor rather than the constructor so the protected
-    // form is what lands in the buffer when we open straight into WYSIWYG.
-    applyToEditor(authoritative);
+    // Rich paste. The markdown pane would otherwise take the clipboard's text/plain flavour,
+    // which throws away every heading, link, emphasis and list item from anything copied out
+    // of a web page or document. Convert the text/html flavour instead.
+    //
+    // Two cases deliberately fall through to Toast UI's own handling:
+    //   * No text/html at all — a plain-text copy, or the browser's paste-as-plain-text. The
+    //     text is inserted verbatim, which is what a markdown source pane should do.
+    //   * HTML carrying data-pm-slice — ProseMirror stamps that on its own clipboard writes,
+    //     so this is text copied out of this very editor. Round-tripping markdown source
+    //     through an HTML conversion would mangle it.
+    // Listen on the host in the capture phase, not on the ProseMirror node itself. At the
+    // target element, capture and bubble listeners both run in registration order — and
+    // ProseMirror registered first, so a listener there fires *after* it has already inserted
+    // the plain-text flavour, and preventDefault comes too late to stop it. Capturing on an
+    // ancestor is what gets us in front of it; stopPropagation then keeps it out entirely.
+    element.addEventListener("paste", function (e) {
+        var pane = element.querySelector(".toastui-editor-md-container .ProseMirror");
+        if (!pane || !e.target || (e.target !== pane && !pane.contains(e.target))) { return; }
+        if (!e.clipboardData) { return; }
+
+        var html = e.clipboardData.getData("text/html");
+        if (!html || html.indexOf("data-pm-slice") !== -1) { return; }
+
+        var markdown = AdminRawHtml.htmlToMarkdown(html);
+        if (markdown === null || markdown === "") { return; }
+
+        e.preventDefault();
+        e.stopPropagation();
+        editor.replaceSelection(markdown);
+    }, true);
+
     syncPostCss();
 
     return {
-        getMarkdown: function () { return authoritative; },
+        getMarkdown: function () { return editor.getMarkdown(); },
         setMarkdown: function (md) {
-            authoritative = md || "";
-            applyToEditor(authoritative);
+            applying = true;
+            try { editor.setMarkdown(md || "", false); }
+            finally { applying = false; }
             syncPostCss();
         },
         destroy: function () {

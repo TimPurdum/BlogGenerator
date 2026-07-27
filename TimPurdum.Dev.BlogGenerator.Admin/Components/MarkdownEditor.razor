@@ -9,16 +9,6 @@
     [Parameter] public string Value { get; set; } = "";
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
 
-    /// <summary>
-    /// What mode the editor opens in. Users can toggle either way from the toolbar.
-    /// <list type="bullet">
-    /// <item><c>"auto"</c> (default) — markdown for documents containing raw HTML, WYSIWYG otherwise.
-    /// Both modes preserve embedded HTML, but only markdown mode's preview pane <em>renders</em> it,
-    /// so that's the useful mode for a post built out of HTML cards.</item>
-    /// <item><c>"wysiwyg"</c> / <c>"markdown"</c> — pin the mode regardless of content.</item>
-    /// </list>
-    /// </summary>
-    [Parameter] public string StartMode { get; set; } = "auto";
     /// <summary>CSS height passed to Toast UI (e.g. "32rem" or "500px").</summary>
     [Parameter] public string Height { get; set; } = "32rem";
 
@@ -34,20 +24,17 @@
             _selfRef = DotNetObjectReference.Create(this);
             _editorHandle = await JS.InvokeAsync<IJSObjectReference>(
                 "adminCreateRichEditor", _host, Value ?? "", _selfRef,
-                new { startMode = StartMode, height = Height });
+                new { height = Height });
             _ready = true;
             return;
         }
 
         // Parent pushed a new Value (e.g. switching between entries on the same Editor page).
         // Push it down to Toast UI if it differs from what the editor currently holds.
-        // getMarkdown answers with the JS side's authoritative copy — in WYSIWYG the editor's
-        // own buffer holds a protected form whose raw HTML is stood in for by carriers, so
-        // comparing against that instead would report a spurious difference every time.
         if (_ready && _editorHandle is not null)
         {
             string current = await _editorHandle.InvokeAsync<string>("getMarkdown");
-            if (current != (Value ?? ""))
+            if (!LineEndingInsensitiveEquals(current, Value ?? ""))
             {
                 // No echo guard needed here: the JS wrapper suppresses change events raised by
                 // its own programmatic writes, so this can't loop back through OnEditorChanged.
@@ -55,6 +42,18 @@
             }
         }
     }
+
+    /// <summary>
+    /// Compare ignoring line-ending style. Toast UI works in LF and strips CR from anything it
+    /// is given, so a source file checked out with CRLF can never compare equal to what the
+    /// editor holds. Comparing raw would push the value back down on <em>every</em> re-render —
+    /// including ones caused by typing in an unrelated front-matter field — needlessly resetting
+    /// the editor each time.
+    /// </summary>
+    private static bool LineEndingInsensitiveEquals(string a, string b) =>
+        string.Equals(Normalize(a), Normalize(b), StringComparison.Ordinal);
+
+    private static string Normalize(string s) => s.Replace("\r\n", "\n").Replace("\r", "\n");
 
     [JSInvokable]
     public async Task OnEditorChanged(string markdown)

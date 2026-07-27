@@ -104,34 +104,47 @@ boot so the redirect wins.
 Ship an `index.html`-shaped `404.html` inside the admin's own `wwwroot` too, with the same
 `<base href>`. Hosts that *do* resolve a nested 404 (and local `dotnet run`) will use it.
 
-## Posts that embed raw HTML
+## The editor is markdown-only
 
-Markdown posts often carry hand-written HTML — a styled `<div>` card, a `<style>` block, an
-inline `<span>`. Toast UI's WYSIWYG mode is backed by ProseMirror, which has no node type for
-arbitrary HTML and therefore **drops it** when converting back to markdown. Left alone, one
-keystroke in WYSIWYG mode is enough to permanently flatten a card-heavy post.
+`MarkdownEditor` runs Toast UI in markdown mode with a live preview pane. **WYSIWYG mode is
+switched off** and its toggle is not rendered.
 
-The editor wrapper handles this for you; there is nothing to configure. Worth knowing:
+That's deliberate. WYSIWYG is backed by ProseMirror, whose schema has no node type for
+arbitrary raw HTML — so a post carrying styled `<div>` cards or a `<style>` block had that
+markup **silently deleted** on the first keystroke. It also canonicalized the whole document
+on every round-trip (`-` bullets to `*`, `---` to `***`, CRLF to LF, trailing spaces trimmed),
+so a one-word edit produced a diff touching unrelated lines.
 
-- **Raw HTML is preserved in both modes.** Entering WYSIWYG swaps each HTML region for a
-  lossless stand-in — block HTML becomes a fenced code block tagged `raw-html`, inline HTML
-  becomes a short token — and leaving restores the original text verbatim. Regions are located
-  with the editor's own CommonMark parse, so detection matches what the renderer considers HTML.
-- **WYSIWYG shows that HTML as source, not as rendered output.** It stays editable as text.
-  Deleting a stand-in deletes the HTML it represents, which is the intended behaviour.
-- **`<style>` blocks are applied in the preview pane.** Toast UI's sanitizer strips them from
-  the rendered output, so the CSS is re-injected separately, rewritten to be confined to the
-  preview. A post carrying `body { display: none }` cannot restyle the admin around it, and
-  `@import` is dropped rather than scoped so preview rendering never reaches the network.
-- **`MarkdownEditor.StartMode` defaults to `"auto"`** — markdown mode for documents containing
-  raw HTML (its preview pane renders the cards), WYSIWYG otherwise. Pass `"markdown"` or
-  `"wysiwyg"` to pin it.
+The preview pane already provides what WYSIWYG was for — seeing rendered output while you
+type — without either problem. Markdown mode returns the document as-is: an edit changes only
+what you edited.
 
-One caveat, unchanged from before and unrelated to HTML: a round-trip through WYSIWYG applies
-Toast UI's markdown canonicalization to the *whole* document — `-` list bullets become `*`,
-`---` thematic breaks become `***`, CRLF becomes LF, trailing spaces go. Content and rendered
-output are unaffected, but the git diff will show those lines. Markdown mode does not
-canonicalize, so it round-trips a document untouched.
+What this means in practice:
+
+- **Raw HTML is safe.** It's plain text in the source pane, and the preview renders it.
+- **Line endings are normalized to LF.** Toast UI strips CR from anything it is given, so a
+  file checked out with CRLF comes back LF once you edit it. This is the one transformation
+  markdown mode still applies, it is unavoidable at this layer, and it was true of the old
+  WYSIWYG path too. Set `* text=auto eol=lf` (or `.gitattributes` equivalent) on your content
+  directory if the churn bothers you.
+- **`<style>` blocks are applied in the preview.** Toast UI's sanitizer strips them from the
+  rendered output, so that CSS is re-injected separately, rewritten to be confined to the
+  preview pane. A post carrying `body { display: none }` cannot restyle the admin around it,
+  and `@import` is dropped rather than scoped so preview rendering never reaches the network.
+  CSS inside a fenced code block is *not* applied — the document goes through the editor's own
+  CommonMark parse, so a post documenting CSS is left alone.
+- **Pasting rich content still produces markdown.** Copy a formatted chunk from a web page or
+  document and the `text/html` flavour is converted on paste, so headings, links, emphasis and
+  lists survive. Two cases pass straight through untouched: a paste carrying only plain text
+  (including the browser's paste-as-plain-text), and text copied out of this editor.
+- **Tables are hand-edited.** There's no cell-by-cell table UI; the toolbar button inserts a
+  markdown table skeleton.
+
+### Upgrading from 1.2.x
+
+`MarkdownEditor.StartMode` has been **removed**. It selected between WYSIWYG and markdown, and
+there is no longer a choice to make. Delete the attribute if you set it — `Height` and the
+`Value` / `ValueChanged` pair are unchanged.
 
 ## Adding custom content types
 
