@@ -18,7 +18,7 @@ These were settled during design and are not open for reinterpretation during im
 
 **All content types are in scope**, through an opt-in interface rather than a change to each type.
 
-**Publishing re-dates the file to the day you publish.** A draft's filename date is a scratch value; the permanent date and URL are fixed at publish time. A draft that sits for three weeks then lands at the top of the archive rather than buried mid-list.
+**Publishing re-dates the file to the day you publish, for dated content types only.** A draft's filename date is a scratch value; the permanent date and URL are fixed at publish time, so a draft that sits for three weeks lands at the top of the archive rather than buried mid-list. This applies to the `Dated` and `YearMonth` values of `ContentNamePattern`. A `Plain` type such as a page has no date in its filename, and renaming one would change its URL and break its route, so publishing a page is a flag flip with no rename.
 
 **Drafts render nowhere.** No HTML file is written for a draft, not even an unlisted one. A file at a guessable `/post/2026/8/15/slug.html` is on the site, which is the thing this feature exists to prevent. The admin's preview pane already renders drafts with the live site's stylesheets, so previewing does not require publishing.
 
@@ -39,7 +39,7 @@ public interface IDraftable
 [YamlMember(Alias = "draft")] public bool? Draft { get; set; }
 ```
 
-Custom content types (Elliot's `MusicFrontMatter`, `ShowFrontMatter`, `GalleryFrontMatter`) adopt the interface when they want the feature. Until they do, they behave exactly as they do today.
+Those two are the only front-matter models this repo ships. Custom types registered by a consuming site through `AddContentType<TFront, TForm>` adopt the interface whenever they want the feature; until they do, they behave exactly as they do today. Note the asymmetry between the two halves: the compiler already understands five content collections (posts, pages, music, shows, galleries), while the admin ships descriptors for posts and pages only.
 
 ### Why `bool?` and not `bool`
 
@@ -88,6 +88,8 @@ Factor it as a reusable helper taking an output root and the set of claimed path
 
 Pages are the exception. Their output lands directly in `OutputWebRootPath` alongside hand-maintained files such as `404.html`, so a sweep there could delete something the compiler did not generate. A draft page gets a targeted delete of its own expected output path instead.
 
+The sweep covers `.html` only. A post that embeds a `blazor-component` block also emits a `.razor` file into the consuming project's `Components/` directory, and unpublishing leaves that file behind to be compiled into the shipped WASM bundle. That is deliberate: those component names must be unique across the project, the generated file is inert with no page referencing it, and sweeping a directory that developers also hand-author is a much worse risk than a few kilobytes of dead code. Publishing the draft again regenerates it in place.
+
 ### The gate this must not go behind
 
 `Generator.cs:62` reads `if (!post.Update) continue;`. `Update` is computed at `MarkupParser.cs:73` from source file mtime against output file mtime. A fresh `actions/checkout` in CI stamps every file with checkout time, so `Update` is not dependably true in the deploy environment.
@@ -106,13 +108,19 @@ The control belongs in the shared chrome of `Pages/Editor.razor`, beside Save �
 
 The editor header shows a Draft or Published badge reflecting current state.
 
-**Publish** sets `Draft = null` and renames the file to today's date, reusing the existing rename path (`WillRename`, `Editor.razor:144`), which PUTs the new path and DELETEs the old one. `BuildNewFileName` (`Editor.razor:406`) already encodes the `YYYY-MM-DD-slug` convention that `Resources.PostNameRegex` expects; publishing recomputes the filename with today's date rather than the date the draft was created. Commit message: `admin: publish posts entry <slug>`.
+**Publish** sets `Draft = null` and, for a dated type, assigns today to the editor's bound date field — `_dateFull` for `Dated`, `_dateMonth` for `YearMonth` (`Editor.razor:131-132`) — then runs the normal save. `BuildNewFileName` (`Editor.razor:406`) composes the filename from those fields, so the new name differs from the original, `WillRename` (`:144`) becomes true on its own, and the existing two-phase rename does the work. No new file-writing path is needed. For a `Plain` type nothing is re-dated and the save is a single ordinary update. Commit message: `admin: publish <slug> entry <name>`.
 
-**Unpublish** sets `Draft = true` and leaves the filename alone, so a re-publish gets a fresh date. Commit message: `admin: unpublish posts entry <slug>`. The live HTML disappears on the next successful build.
+Worth recording, since it is easy to misread the code: the date fields are pre-filled from the existing filename by `PrefillFilenameInputs` (`Editor.razor:232`) when an entry is opened for editing, not left at today. Ordinary saves therefore do not re-date anything, and publish re-dating is a deliberate assignment rather than a side effect.
 
-Both are ordinary saves underneath, so `DeployStatusService` tracking and the deploy banner work unchanged.
+**Unpublish** sets `Draft = true` and leaves the filename alone, so a re-publish gets a fresh date. Commit message: `admin: unpublish <slug> entry <name>`. The live HTML disappears on the next successful build.
 
-`BuildViewLiveUrl` (`Editor.razor:422`) returns null for a draft, so the deploy banner does not offer a "view live" link to a URL that will 404.
+### Deploy tracking across the two-commit publish
+
+The rename path is two commits — a PUT at the new path, then a DELETE at the old one (`Editor.razor:367-381`) — because the Contents API has no atomic rename. `Deploy.Track` is currently handed `result.CommitSha` from the PUT, and the DELETE that follows pushes a second commit whose workflow run supersedes it. The banner then follows a run that gets canceled.
+
+That is pre-existing behavior of rename, but publish makes it the common case rather than a rare one, so fix it here: change `GitHubApiService.DeleteFileAsync` (`Services/GitHubApiService.cs:100`) to read its response and return a `RepoCommitResult` like `PutTextFileAsync` does, and track the delete's sha on the rename path. It currently returns `Task` and discards the response body entirely.
+
+`BuildViewLiveUrl` (`Editor.razor:422`) is static and does not see front-matter state, so guard it at the call site (`:360`): a draft passes null to `Deploy.Track`, and the banner offers no "view live" link to a URL that would 404.
 
 ### Status on the content list
 
@@ -130,7 +138,7 @@ No content migration. A file with no `draft` key is published, which is every fi
 
 The behavior change Elliot will notice is that new content created through the admin starts as a draft and needs an explicit publish. Note it in the package release notes and in `TimPurdum.Dev.BlogGenerator.Admin/ReadMe.md`.
 
-His custom content types keep working untouched, and gain draft support the day their front matter records add `IDraftable`. Document that adoption step in the "Adding custom content types" section of the admin ReadMe.
+Any custom content type a consuming site has registered keeps working untouched, and gains draft support the day its front-matter record adds `IDraftable`. Document that adoption step in the "Adding custom content types" section of the admin ReadMe.
 
 ## Versioning
 
@@ -145,7 +153,7 @@ Each consuming site picks the change up through a submodule bump.
 
 The repository has no unit test project, so verification is manual and runs against the real pipeline.
 
-1. Build the site with all 20 existing posts and confirm the output is byte-identical to what is committed. This is the regression that matters most — an absent `draft` key must change nothing.
+1. Build the site with all 20 existing posts and confirm `TimPurdum.Dev/wwwroot/` is byte-identical to what is committed. This is the regression that matters most — an absent `draft` key must change nothing. Scope the comparison to `wwwroot/`: the compiler stamps `lastmodified` back into source markdown when it regenerates a post (`MarkupParser.cs:92-104`), so the content directory is expected to move.
 2. Add `draft: true` to one existing post, rebuild, and confirm its `.html` is deleted from `wwwroot/post/...`, and that it is gone from the index, the nav menu, `feed.xml`, and `sitemap.xml`.
 3. Remove the flag, rebuild, confirm the post returns.
 4. Rename a published post's source file, rebuild, and confirm the orphaned HTML at the old path is removed — the pre-existing bug this sweep also fixes.
