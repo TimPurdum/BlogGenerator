@@ -387,6 +387,12 @@ a:hover { color: var(--admin-accent); }
 
 /* --- content table ---------------------------------------- */
 
+.content-filter {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
 .content-table {
     width: 100%;
     border-collapse: collapse;

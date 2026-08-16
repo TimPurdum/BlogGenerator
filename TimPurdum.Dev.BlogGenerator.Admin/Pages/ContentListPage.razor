@@ -139,17 +139,28 @@ else
 
     private StatusFilter _filter = StatusFilter.All;
 
+    /// <summary>
+    /// Incremented at the start of every <see cref="LoadAsync"/> call. A callback that resumes after
+    /// a later call has started compares its captured value against the current one and discards its
+    /// results instead of overwriting a newer navigation's state.
+    /// </summary>
+    private int _loadGeneration;
+
     private enum StatusFilter { All, Drafts, Published }
 
     private bool SupportsDrafts =>
         _descriptor is not null && typeof(IDraftable).IsAssignableFrom(_descriptor.FrontMatterType);
 
-    private List<Row> VisibleRows => _filter switch
-    {
-        StatusFilter.Drafts    => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && d).ToList(),
-        StatusFilter.Published => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && !d).ToList(),
-        _                      => _rows
-    };
+    private List<Row> VisibleRows => !SupportsDrafts
+        ? _rows
+        : _filter switch
+        {
+            StatusFilter.Drafts    => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && d).ToList(),
+            // A row missing from the map (fetch failed or parse failed) matches neither Drafts nor
+            // Published — guessing its status would be worse than omitting it, so it only shows under All.
+            StatusFilter.Published => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && !d).ToList(),
+            _                      => _rows
+        };
 
     private string TitleText => _descriptor?.DisplayName ?? "Content";
 
@@ -162,7 +173,13 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        string? previousSlug = _descriptor?.Slug;
         _descriptor = TypeSlug is null ? null : Registry.FindBySlug(TypeSlug);
+        if (_descriptor?.Slug != previousSlug)
+        {
+            // A different content type has nothing to do with the previous type's filter selection.
+            _filter = StatusFilter.All;
+        }
         if (_descriptor is null)
         {
             _loading = false;
@@ -174,11 +191,17 @@ else
     private async Task LoadAsync()
     {
         if (_descriptor is null) return;
+        int generation = ++_loadGeneration;
         _loading = true;
         _error = null;
+        // Reset unconditionally — even content types that don't support drafts must not keep showing
+        // stale entries from whatever type was loaded before them.
+        _draftByFile.Clear();
         try
         {
             IReadOnlyList<RepoEntry> entries = await Api.ListDirectoryAsync(_descriptor.ContentPath);
+            if (generation != _loadGeneration) return; // a newer navigation has already started
+
             IEnumerable<Row> parsed = entries
                 .Where(e => e.Type == "file" && e.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
                 .Select(ParseRow)
@@ -188,17 +211,24 @@ else
                 ? parsed.OrderBy(r => r.Slug, StringComparer.OrdinalIgnoreCase).ToList()
                 : parsed.OrderByDescending(r => r.Date).ToList();
 
+            // Render the listing immediately; the status column backfills once the per-row fetches
+            // below complete, instead of leaving the whole page blank until every fetch resolves.
+            _loading = false;
+            StateHasChanged();
+
             if (SupportsDrafts)
             {
-                await LoadDraftStatusesAsync();
+                await LoadDraftStatusesAsync(generation);
+                if (generation == _loadGeneration)
+                {
+                    StateHasChanged();
+                }
             }
         }
         catch (Exception ex)
         {
+            if (generation != _loadGeneration) return; // a newer navigation has already started
             _error = ex.Message;
-        }
-        finally
-        {
             _loading = false;
         }
     }
@@ -208,7 +238,7 @@ else
     /// Concurrent, and a row that fails to load or parse is simply left out of the map — it renders as
     /// unknown rather than failing the whole page.
     /// </summary>
-    private async Task LoadDraftStatusesAsync()
+    private async Task LoadDraftStatusesAsync(int generation)
     {
         if (_descriptor is null) return;
 
@@ -231,7 +261,8 @@ else
 
         (string FileName, bool? Draft)[] results = await Task.WhenAll(fetches);
 
-        _draftByFile.Clear();
+        if (generation != _loadGeneration) return; // a newer navigation has already started
+
         foreach ((string fileName, bool? draft) in results)
         {
             if (draft.HasValue)

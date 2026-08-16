@@ -1132,6 +1132,7 @@ git commit -m "feat(admin): publish and unpublish actions in the editor"
 
 **Files:**
 - Modify: `TimPurdum.Dev.BlogGenerator.Admin/Pages/ContentListPage.razor`
+- Modify: `TimPurdum.Dev.BlogGenerator.Admin/wwwroot/css/admin.css`
 
 **Interfaces:**
 - Consumes: `IDraftable` from Task 5.
@@ -1149,31 +1150,104 @@ In the `@code` block, after `_busy` (line 104), add:
 
     private StatusFilter _filter = StatusFilter.All;
 
+    /// <summary>
+    /// Incremented at the start of every <see cref="LoadAsync"/> call. A callback that resumes after
+    /// a later call has started compares its captured value against the current one and discards its
+    /// results instead of overwriting a newer navigation's state.
+    /// </summary>
+    private int _loadGeneration;
+
     private enum StatusFilter { All, Drafts, Published }
 
     private bool SupportsDrafts =>
         _descriptor is not null && typeof(IDraftable).IsAssignableFrom(_descriptor.FrontMatterType);
 
-    private List<Row> VisibleRows => _filter switch
-    {
-        StatusFilter.Drafts    => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && d).ToList(),
-        StatusFilter.Published => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && !d).ToList(),
-        _                      => _rows
-    };
+    private List<Row> VisibleRows => !SupportsDrafts
+        ? _rows
+        : _filter switch
+        {
+            StatusFilter.Drafts    => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && d).ToList(),
+            // A row missing from the map (fetch failed or parse failed) matches neither Drafts nor
+            // Published — guessing its status would be worse than omitting it, so it only shows under All.
+            StatusFilter.Published => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && !d).ToList(),
+            _                      => _rows
+        };
 ```
 
-- [ ] **Step 2: Fetch statuses after the listing loads**
+`SupportsDrafts` gates `VisibleRows` because the component instance is reused across navigations (the route parameter changes without recreating the component): a content type that doesn't implement `IDraftable` never populates `_draftByFile`, so without this guard a stale `_filter` left over from a previous, draft-supporting type would silently filter its rows away.
 
-At the end of the `try` block in `LoadAsync`, after `_rows` is assigned (line 141), add:
+- [ ] **Step 2: Reset per-type state and fetch statuses after the listing loads**
+
+The component is reused across navigations — the route parameter changes without recreating the
+instance — so `OnParametersSetAsync`, `LoadAsync`, and the new `LoadDraftStatusesAsync` must all
+guard against state (and in-flight requests) from the *previous* content type. Replace
+`OnParametersSetAsync` and `LoadAsync` with:
 
 ```csharp
+    protected override async Task OnParametersSetAsync()
+    {
+        string? previousSlug = _descriptor?.Slug;
+        _descriptor = TypeSlug is null ? null : Registry.FindBySlug(TypeSlug);
+        if (_descriptor?.Slug != previousSlug)
+        {
+            // A different content type has nothing to do with the previous type's filter selection.
+            _filter = StatusFilter.All;
+        }
+        if (_descriptor is null)
+        {
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_descriptor is null) return;
+        int generation = ++_loadGeneration;
+        _loading = true;
+        _error = null;
+        // Reset unconditionally — even content types that don't support drafts must not keep showing
+        // stale entries from whatever type was loaded before them.
+        _draftByFile.Clear();
+        try
+        {
+            IReadOnlyList<RepoEntry> entries = await Api.ListDirectoryAsync(_descriptor.ContentPath);
+            if (generation != _loadGeneration) return; // a newer navigation has already started
+
+            IEnumerable<Row> parsed = entries
+                .Where(e => e.Type == "file" && e.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                .Select(ParseRow)
+                .Where(r => r is not null)
+                .Select(r => r!);
+            _rows = _descriptor.NamePattern == ContentNamePattern.Plain
+                ? parsed.OrderBy(r => r.Slug, StringComparer.OrdinalIgnoreCase).ToList()
+                : parsed.OrderByDescending(r => r.Date).ToList();
+
+            // Render the listing immediately; the status column backfills once the per-row fetches
+            // below complete, instead of leaving the whole page blank until every fetch resolves.
+            _loading = false;
+            StateHasChanged();
+
             if (SupportsDrafts)
             {
-                await LoadDraftStatusesAsync();
+                await LoadDraftStatusesAsync(generation);
+                if (generation == _loadGeneration)
+                {
+                    StateHasChanged();
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            if (generation != _loadGeneration) return; // a newer navigation has already started
+            _error = ex.Message;
+            _loading = false;
+        }
+    }
 ```
 
-Then add the method after `LoadAsync`:
+Then add the status-fetch method after `LoadAsync`:
 
 ```csharp
     /// <summary>
@@ -1181,7 +1255,7 @@ Then add the method after `LoadAsync`:
     /// Concurrent, and a row that fails to load or parse is simply left out of the map — it renders as
     /// unknown rather than failing the whole page.
     /// </summary>
-    private async Task LoadDraftStatusesAsync()
+    private async Task LoadDraftStatusesAsync(int generation)
     {
         if (_descriptor is null) return;
 
@@ -1204,7 +1278,8 @@ Then add the method after `LoadAsync`:
 
         (string FileName, bool? Draft)[] results = await Task.WhenAll(fetches);
 
-        _draftByFile.Clear();
+        if (generation != _loadGeneration) return; // a newer navigation has already started
+
         foreach ((string fileName, bool? draft) in results)
         {
             if (draft.HasValue)
@@ -1214,6 +1289,13 @@ Then add the method after `LoadAsync`:
         }
     }
 ```
+
+`_draftByFile.Clear()` happens once, unconditionally, at the top of `LoadAsync` — not inside
+`LoadDraftStatusesAsync` — so a content type that doesn't support drafts still clears out whatever
+the previously viewed type left behind. `_loadGeneration` is captured into a local at the start of
+each `LoadAsync` call; every point that would otherwise commit state after an `await` checks the
+captured value against the current field first, so a call left over from a navigation the user has
+since moved away from discards its results instead of overwriting the current page.
 
 - [ ] **Step 3: Render the filter and the column**
 
@@ -1276,15 +1358,32 @@ In `ConfirmDeleteAsync`, after `_rows.Remove(row);` (line 225), add:
             _draftByFile.Remove(row.FileName);
 ```
 
-- [ ] **Step 5: Verify the build**
+- [ ] **Step 5: Style the filter control**
+
+The three filter buttons have no rule of their own and inherit no spacing, so they sit flush
+against each other with nothing below the group. In `admin.css`, immediately before the
+`/* --- content table ---------------------------------------- */` block, add:
+
+```css
+.content-filter {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+```
+
+Nothing else is needed — the buttons, pills, and table cells all inherit complete styling from
+existing selectors.
+
+- [ ] **Step 6: Verify the build**
 
 Run: `dotnet build TimPurdum.Dev.BlogGenerator.Admin/TimPurdum.Dev.BlogGenerator.Admin.csproj`
 Expected: build succeeded, 0 errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add TimPurdum.Dev.BlogGenerator.Admin/Pages/ContentListPage.razor
+git add TimPurdum.Dev.BlogGenerator.Admin/Pages/ContentListPage.razor TimPurdum.Dev.BlogGenerator.Admin/wwwroot/css/admin.css
 git commit -m "feat(admin): show and filter draft status on the content list"
 ```
 
