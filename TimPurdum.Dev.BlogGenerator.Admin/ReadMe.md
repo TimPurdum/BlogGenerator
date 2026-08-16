@@ -140,6 +140,60 @@ What this means in practice:
 - **Tables are hand-edited.** There's no cell-by-cell table UI; the toolbar button inserts a
   markdown table skeleton.
 
+## Drafts
+
+Content whose front matter carries `draft: true` renders nowhere: no HTML file, no index or nav
+entry, no `feed.xml` item, no `sitemap.xml` entry. An absent `draft` key means published, so
+existing content needs no migration.
+
+New entries created in the admin start as drafts. The editor shows a Draft or Published badge and a
+Publish or Unpublish button beside Save.
+
+Publishing a `Dated` or `YearMonth` type re-dates the file to the day (or month) you publish — a
+draft's filename date is a scratch value, and this keeps a post that sat for three weeks from
+publishing buried mid-archive. That is a rename, so it is two commits. Pages and other `Plain`-named
+types keep their filename, because for them the filename is the URL.
+
+Unpublishing keeps the filename and removes the generated HTML on the next build. The compiler
+prunes any generated `.html` under the post output root that no published entry claims, which also
+cleans up after renames and deletions.
+
+### Opting a custom content type in
+
+```csharp
+public sealed record MusicFrontMatter : IHasLastmodified, IDraftable
+{
+    [YamlMember(Alias = "draft")] public bool? Draft { get; set; }
+    // ...
+}
+```
+
+`bool?`, not `bool`. The serializer omits nulls, so a published entry writes no `draft` key and its
+file stays byte-identical. A plain `bool` writes `draft: false` into every file the editor touches.
+
+A type that does not implement `IDraftable` behaves exactly as before and shows no publish controls.
+Note that this is not optional if the content's markdown already carries a `draft` key by hand:
+front-matter keys absent from the model are dropped on save, so an unmodeled `draft: true` would be
+erased and the entry published.
+
+### Upgrading from 1.4.x
+
+Two breaking changes, both in service of the same fix: the deploy banner now follows the *later*
+commit of a two-phase rename instead of the first.
+
+- `GitHubApiService.DeleteFileAsync` now returns `Task<RepoCommitResult>` instead of `Task`.
+  Callers that ignore the result are unaffected. Publishing or renaming a dated entry writes the
+  new path and then deletes the old one as two separate commits — GitHub's Contents API has no
+  atomic rename — and the delete commit is the one whose workflow run actually finishes, since it
+  supersedes and cancels the run the first commit kicked off. Before this change the banner
+  tracked the first commit and could report a deploy that GitHub itself had already superseded.
+- `IContentTypeDescriptor` gained a member, `CreateFrontMatterForNewEntry()`. This is a breaking
+  change for any consuming site that implements the interface directly rather than registering
+  content types through `AddContentType<TFront, TForm>`. It exists because the editor allocates
+  front matter on every load, including when opening an existing entry, so defaulting to draft in
+  the shared allocator would have briefly flagged published entries as drafts while their file
+  loads.
+
 ## Previewing with the live site's styles
 
 The preview pane pulls in the public site's own stylesheets, so a draft previews close to how
