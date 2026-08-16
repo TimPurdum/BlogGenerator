@@ -121,7 +121,7 @@ else
             {
                 @if (IsDraft)
                 {
-                    <button class="admin-button" type="button" disabled="@_saving" @onclick="PublishAsync">Publish</button>
+                    <button class="admin-button" type="button" disabled="@_saving" @onclick="PublishAsync">@PublishButtonLabel</button>
                 }
                 else
                 {
@@ -545,4 +545,42 @@ else
 
     private static string StripExtension(string fileName) =>
         fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? fileName[..^3] : fileName;
+
+    /// <summary>Computes the filename that PublishAsync will produce, using today's date for dated types.
+    /// Returns null for Plain types (pages) or when the slug is empty/invalid.</summary>
+    private string? ComputePublishFileName()
+    {
+        try
+        {
+            if (_descriptor is null || string.IsNullOrWhiteSpace(_slug))
+                return null;
+
+            // Plain types don't get re-dated on publish — their filename is their URL
+            if (_descriptor.NamePattern == ContentNamePattern.Plain)
+                return null;
+
+            string slug = _slug.Trim().ToLowerInvariant();
+            return _descriptor.NamePattern switch
+            {
+                ContentNamePattern.YearMonth => $"{DateTime.Today:yyyy-MM}-{slug}.md",
+                _ => $"{DateTime.Today:yyyy-MM-dd}-{slug}.md"
+            };
+        }
+        catch
+        {
+            // Guard against any unexpected state — fall back to plain "Publish"
+            return null;
+        }
+    }
+
+    private string PublishButtonLabel
+    {
+        get
+        {
+            string? publishFileName = ComputePublishFileName();
+            return publishFileName is null
+                ? "Publish"
+                : $"Publish as {StripExtension(publishFileName)}";
+        }
+    }
 }
