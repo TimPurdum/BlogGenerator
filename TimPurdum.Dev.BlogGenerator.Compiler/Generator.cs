@@ -31,9 +31,14 @@ public static class Generator
         // feed and the sitemap all consume `posts`, so filtering here covers every surface at once.
         List<PostMetaData> allPosts = MarkupParser.GeneratePostMetaDatas();
         List<PostMetaData> posts = allPosts.Where(static p => !p.Draft).ToList();
-        MusicEntries = MarkupParser.GenerateMusicMetaDatas().Where(static m => !m.Draft).ToList();
-        ShowEntries = MarkupParser.GenerateShowMetaDatas().Where(static s => !s.Draft).ToList();
-        GalleryEntries = MarkupParser.GenerateGalleryMetaDatas().Where(static g => !g.Draft).ToList();
+        // Kept unfiltered (not just the assigned Entries fields) so the draft warning below can tell
+        // which entries were excluded because they're drafts.
+        List<MusicMetaData> allMusic = MarkupParser.GenerateMusicMetaDatas();
+        List<ShowMetaData> allShows = MarkupParser.GenerateShowMetaDatas();
+        List<GalleryMetaData> allGalleries = MarkupParser.GenerateGalleryMetaDatas();
+        MusicEntries = allMusic.Where(static m => !m.Draft).ToList();
+        ShowEntries = allShows.Where(static s => !s.Draft).ToList();
+        GalleryEntries = allGalleries.Where(static g => !g.Draft).ToList();
 
         List<LinkData> navLinks = [];
         foreach (PostMetaData post in posts)
@@ -100,11 +105,22 @@ public static class Generator
         // This runs unconditionally, outside the `if (!entry.Update) continue` gates above. Update is
         // computed from source mtime against output mtime, and a fresh CI checkout stamps every file
         // with checkout time — deletion inside that gate would work locally and silently no-op in CI.
+        //
+        // A swept path is a draft's own output (an unpublish) or a path no live entry claims at all (an
+        // orphan left by a rename or a deleted source file). Distinguish them so the log names the real
+        // cause -- with parse failures now aborting the build (see MarkupParser.GeneratePostMetaData),
+        // this is the main diagnostic for anything unexpected disappearing.
+        HashSet<string> draftPostOutputPaths = new(
+            allPosts.Where(static p => p.Draft).Select(static p => Path.GetFullPath(p.OutputPath)),
+            StringComparer.OrdinalIgnoreCase);
         foreach (string removed in OutputSweeper.SweepOrphans(
                      Path.Combine(BlogSettings.OutputWebRootPath, "post"),
                      posts.Select(static p => p.OutputPath)))
         {
-            Console.WriteLine($"Removed unpublished or orphaned output: {removed}");
+            string reason = draftPostOutputPaths.Contains(Path.GetFullPath(removed))
+                ? "unpublished"
+                : "orphaned (no matching entry -- renamed or source deleted)";
+            Console.WriteLine($"Removed {reason} output: {removed}");
         }
 
         // Pages share OutputWebRootPath with hand-maintained files such as 404.html, so they get a
@@ -116,6 +132,43 @@ public static class Generator
             {
                 File.Delete(draftPagePath);
                 Console.WriteLine($"Removed unpublished page output: {draftPagePath}");
+            }
+        }
+
+        // Music, show, and gallery output roots are deliberately NOT swept -- unlike posts and pages,
+        // those content paths can be unconfigured, and pointing a delete sweep at a root nothing
+        // populates would treat everything under it as an orphan. So a draft of one of these types
+        // leaves its previously published output reachable at its old URL; this is documented (core
+        // ReadMe, "Drafts") as the consuming site's responsibility to clean up. Diagnostic only: warn,
+        // never delete.
+        foreach (MusicMetaData draftMusic in allMusic.Where(static m => m.Draft))
+        {
+            if (File.Exists(draftMusic.OutputPath))
+            {
+                Console.WriteLine(
+                    $"Warning: music entry '{draftMusic.Title}' is marked draft, but its previously " +
+                    $"published output still exists at '{draftMusic.OutputPath}'. It is not swept " +
+                    "automatically -- remove it by hand.");
+            }
+        }
+        foreach (ShowMetaData draftShow in allShows.Where(static s => s.Draft))
+        {
+            if (File.Exists(draftShow.OutputPath))
+            {
+                Console.WriteLine(
+                    $"Warning: show entry '{draftShow.Title}' is marked draft, but its previously " +
+                    $"published output still exists at '{draftShow.OutputPath}'. It is not swept " +
+                    "automatically -- remove it by hand.");
+            }
+        }
+        foreach (GalleryMetaData draftGallery in allGalleries.Where(static g => g.Draft))
+        {
+            if (File.Exists(draftGallery.OutputPath))
+            {
+                Console.WriteLine(
+                    $"Warning: gallery entry '{draftGallery.Title}' is marked draft, but its previously " +
+                    $"published output still exists at '{draftGallery.OutputPath}'. It is not swept " +
+                    "automatically -- remove it by hand.");
             }
         }
 

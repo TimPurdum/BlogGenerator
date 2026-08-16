@@ -88,4 +88,25 @@ public sealed class DraftPartitionTests
         Assert.IsFalse(Directory.Exists(Path.Combine(_root, "wwwroot", "post", "2026")),
             "Parsing must not create output directories; the write site does that.");
     }
+
+    [TestMethod]
+    public void GeneratePostMetaDatas_ThrowsOnMalformedFrontMatter()
+    {
+        // An unterminated quoted scalar is invalid YAML, so FrontMatter.Parse throws inside
+        // GeneratePostMetaData's try block. Before this fix, that exception was swallowed and the
+        // post silently dropped from the list -- which then let OutputSweeper.SweepOrphans treat this
+        // post's still-committed HTML as an orphan and delete it, on a green build. The whole point of
+        // this test is that a parse failure must abort the build instead of shrinking the list quietly.
+        string malformed = """
+                           ---
+                           layout: post
+                           title: "Unterminated
+                           ---
+
+                           Some body text.
+                           """;
+        File.WriteAllText(Path.Combine(_root, "posts", "2026-08-15-broken.md"), malformed);
+
+        Assert.ThrowsExactly<InvalidOperationException>(() => MarkupParser.GeneratePostMetaDatas());
+    }
 }

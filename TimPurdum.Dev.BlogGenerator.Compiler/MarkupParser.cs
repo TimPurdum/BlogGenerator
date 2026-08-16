@@ -108,10 +108,14 @@ public static class MarkupParser
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error generating Razor content for post {fileName}: {ex.Message}");
+                // Do NOT return null here. This post's OutputPath would then be absent from the claim
+                // set Generator passes to OutputSweeper.SweepOrphans, and the sweeper would delete this
+                // post's still-committed, still-live HTML as an "orphan" -- on a green build. Aborting
+                // the whole build on one bad file is the safe failure mode; matches CheckSlugCollision's
+                // precedent of throwing with a message naming the offending file.
+                throw new InvalidOperationException(
+                    $"Failed to parse post '{fileName}' ({post}): {ex.Message}", ex);
             }
-
-            return null;
     }
 
     public static List<MusicMetaData> GenerateMusicMetaDatas()

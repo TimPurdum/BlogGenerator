@@ -3,7 +3,7 @@ public record PostMetaData(string Title, string SubTitle, string Url, DateTime P
     List<string> ScriptTags, string Layout, string Description, string OutputPath, bool Update,
     /// <summary>True when frontmatter carries <c>draft: true</c>. Draft entries render nowhere:
     /// no HTML file, no nav link, no feed item, no sitemap entry.</summary>
-    bool Draft);
+    bool Draft = false);
 
 public record PageMetaData(string Title, string SubTitle, string Url, string Content,
     Dictionary<string, string> RazorComponents, List<string> ScriptTags, string Layout,

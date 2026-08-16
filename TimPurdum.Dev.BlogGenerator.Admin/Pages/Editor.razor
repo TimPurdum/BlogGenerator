@@ -21,7 +21,7 @@
     {
         <p class="page-heading__lede">Editing <code class="path">@File</code></p>
     }
-    @if (SupportsDrafts && !_loading && _descriptor is not null)
+    @if (SupportsDrafts && !_loading && _descriptor is not null && _error is null)
     {
         <p class="page-heading__lede">
             <span class="status-pill @(IsDraft ? "status-pill--draft" : "status-pill--published")">

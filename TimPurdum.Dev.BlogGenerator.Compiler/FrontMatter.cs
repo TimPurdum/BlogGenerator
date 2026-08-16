@@ -52,8 +52,21 @@ public class FrontMatter
         {
             "true" or "yes" or "y" or "on" or "1" => true,
             "false" or "no" or "n" or "off" or "0" => false,
-            _ => @default
+            _ => WarnUnrecognized(key, v, @default)
         };
+    }
+
+    /// <summary>
+    /// Logs an unrecognized boolean scalar (e.g. a typo like <c>draft: ture</c>) so it is visible in
+    /// build output. The semantic here is deliberately unchanged: this still returns <paramref name="default"/>
+    /// rather than throwing, because throwing would abort the build over a front-matter typo.
+    /// </summary>
+    private static bool WarnUnrecognized(string key, object value, bool @default)
+    {
+        Console.WriteLine(
+            $"Warning: front matter key '{key}' has an unrecognized boolean value '{value}'; " +
+            $"treating it as {(@default ? "true" : "false")}.");
+        return @default;
     }
 
     /// <summary>
