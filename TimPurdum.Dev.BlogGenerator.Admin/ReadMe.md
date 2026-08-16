@@ -134,7 +134,7 @@ What this means in practice:
   CSS inside a fenced code block is *not* applied — the document goes through the editor's own
   CommonMark parse, so a post documenting CSS is left alone.
 - **Pasting rich content still produces markdown.** Copy a formatted chunk from a web page or
-  document and the `text/html` flavour is converted on paste, so headings, links, emphasis and
+  document and the `text/html` flavor is converted on paste, so headings, links, emphasis and
   lists survive. Two cases pass straight through untouched: a paste carrying only plain text
   (including the browser's paste-as-plain-text), and text copied out of this editor.
 - **Tables are hand-edited.** There's no cell-by-cell table UI; the toolbar button inserts a
@@ -200,7 +200,7 @@ commit of a two-phase rename instead of the first.
 ## Previewing with the live site's styles
 
 The preview pane pulls in the public site's own stylesheets, so a draft previews close to how
-it will actually publish — real typography, colours, link styling, code blocks and image rules
+it will actually publish — real typography, colors, link styling, code blocks and image rules
 rather than Toast UI's generic defaults.
 
 ```csharp
@@ -219,7 +219,7 @@ stylesheet into the admin safe:
 
 - **Every selector is confined to the preview pane.** Nothing can restyle the admin around it.
 - **`html` / `body` / `:root` rules are folded onto the preview container** rather than left to
-  match nothing. This is what carries the site's fonts, colours and custom properties across —
+  match nothing. This is what carries the site's fonts, colors and custom properties across —
   most of its look lives in those rules.
 - **Viewport declarations are dropped from those page-level rules** — `display`, `position`,
   `height`/`width` and their min/max forms, the flex properties, `overflow`. On a real page
