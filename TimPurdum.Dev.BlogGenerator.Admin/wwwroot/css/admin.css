@@ -1350,3 +1350,23 @@ select.form-input { cursor: pointer; }
     padding: 0.05em 0.35em;
     border-radius: 2px;
 }
+
+/* --- draft/publish status pill (editor page heading) ------ */
+
+.status-pill {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 1px solid currentColor;
+}
+
+.status-pill--draft {
+    color: var(--admin-accent);
+}
+
+.status-pill--published {
+    color: var(--admin-text);
+    opacity: 0.75;
+}

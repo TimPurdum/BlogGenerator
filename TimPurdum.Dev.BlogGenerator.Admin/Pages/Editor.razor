@@ -21,6 +21,18 @@
     {
         <p class="page-heading__lede">Editing <code class="path">@File</code></p>
     }
+    @if (SupportsDrafts && !_loading && _descriptor is not null)
+    {
+        <p class="page-heading__lede">
+            <span class="status-pill @(IsDraft ? "status-pill--draft" : "status-pill--published")">
+                @(IsDraft ? "Draft" : "Published")
+            </span>
+            @if (IsDraft)
+            {
+                <span> — not on the public site until you publish.</span>
+            }
+        </p>
+    }
 </header>
 
 @if (_descriptor is null)
@@ -77,7 +89,8 @@ else
             {
                 <p class="form-row__hint" style="margin-top: 0.5rem;">
                     Saving will rename: <code class="path">@OriginalFileName</code> &rarr; <code class="path">@BuildNewFileName()</code>.
-                    There is no automatic redirect. The old URL may keep working until old generated output is pruned.
+                    There is no automatic redirect from the old URL. Output generated under the old name is
+                    removed on the next build.
                 </p>
             }
         </fieldset>
@@ -104,6 +117,17 @@ else
 
         <div class="editor-actions">
             <button class="admin-button" type="submit" disabled="@_saving">@(_saving ? "Saving…" : "Save")</button>
+            @if (SupportsDrafts)
+            {
+                @if (IsDraft)
+                {
+                    <button class="admin-button" type="button" disabled="@_saving" @onclick="PublishAsync">Publish</button>
+                }
+                else
+                {
+                    <button class="admin-button admin-button--ghost" type="button" disabled="@_saving" @onclick="UnpublishAsync">Unpublish</button>
+                }
+            }
             <a class="admin-button admin-button--ghost" href="/admin/@_descriptor.Slug">Cancel</a>
         </div>
     </form>
@@ -150,6 +174,14 @@ else
             return !string.Equals(BuildNewFileName(), OriginalFileName, StringComparison.OrdinalIgnoreCase);
         }
     }
+
+    /// <summary>True when this content type opted into drafts by implementing IDraftable.</summary>
+    private bool SupportsDrafts => _frontmatter is IDraftable;
+
+    private bool IsDraft => _frontmatter is IDraftable { Draft: true };
+
+    /// <summary>Why a save is happening. Only affects commit messages — the write path is identical.</summary>
+    private enum SaveIntent { Save, Publish, Unpublish }
 
     private string PageTitleText
     {
@@ -342,7 +374,41 @@ else
         return true;
     }
 
-    private async Task SaveAsync()
+    private async Task PublishAsync()
+    {
+        if (_frontmatter is not IDraftable draftable || _descriptor is null) return;
+
+        // Null, not false: the serializer omits null, so a published entry carries no draft key.
+        draftable.Draft = null;
+
+        // Re-date dated types to today. A draft's filename date is a scratch value; the permanent date
+        // and URL are fixed at publish time, so a post that sat for three weeks sorts to the top of the
+        // archive instead of being buried. A Plain type (a page) has no date in its filename and its
+        // filename IS its URL, so renaming one would break its route.
+        switch (_descriptor.NamePattern)
+        {
+            case ContentNamePattern.Dated:
+                _dateFull = DateTime.Today.ToString("yyyy-MM-dd");
+                break;
+            case ContentNamePattern.YearMonth:
+                _dateMonth = DateTime.Today.ToString("yyyy-MM");
+                break;
+        }
+
+        await SaveAsync(SaveIntent.Publish);
+    }
+
+    private async Task UnpublishAsync()
+    {
+        if (_frontmatter is not IDraftable draftable) return;
+        // Leave the filename alone. A later re-publish picks up that day's date.
+        draftable.Draft = true;
+        await SaveAsync(SaveIntent.Unpublish);
+    }
+
+    private Task SaveAsync() => SaveAsync(SaveIntent.Save);
+
+    private async Task SaveAsync(SaveIntent intent)
     {
         if (_descriptor is null) return;
         _saving = true;
@@ -358,11 +424,14 @@ else
             string newPath = $"{_descriptor.ContentPath}/{newFileName}";
 
             RepoCommitResult result;
-            string? viewLive = BuildViewLiveUrl(_descriptor, newFileName);
+            // A draft has no live URL. BuildViewLiveUrl is static and cannot see front-matter state,
+            // so the guard lives here rather than inside it.
+            string? viewLive = IsDraft ? null : BuildViewLiveUrl(_descriptor, newFileName);
 
             if (isNew)
             {
-                string commitMessage = $"admin: create {_descriptor.Slug} entry {StripExtension(newFileName)}";
+                string createVerb = intent == SaveIntent.Publish ? "publish" : "create";
+                string commitMessage = $"admin: {createVerb} {_descriptor.Slug} entry {StripExtension(newFileName)}";
                 result = await Api.PutTextFileAsync(newPath, fileText, commitMessage);
             }
             else if (WillRename)
@@ -374,10 +443,12 @@ else
                 // the error; the user can re-Save to retry the delete.
                 string oldPath = $"{_descriptor.ContentPath}/{OriginalFileName}";
                 string slugForCommit = StripExtension(newFileName);
-                string putMessage = $"admin: rename {_descriptor.Slug} entry to {slugForCommit}";
+                string putVerb = intent == SaveIntent.Publish ? "publish" : "rename";
+                string putMessage = $"admin: {putVerb} {_descriptor.Slug} entry to {slugForCommit}";
                 result = await Api.PutTextFileAsync(newPath, fileText, putMessage);
 
-                string deleteMessage = $"admin: delete {_descriptor.Slug} entry {StripExtension(OriginalFileName)} (renamed to {slugForCommit})";
+                string deleteReason = intent == SaveIntent.Publish ? "published as" : "renamed to";
+                string deleteMessage = $"admin: delete {_descriptor.Slug} entry {StripExtension(OriginalFileName)} ({deleteReason} {slugForCommit})";
                 RepoCommitResult deleteResult = await Api.DeleteFileAsync(oldPath, _existingSha!, deleteMessage);
                 // Track the delete, not the PUT: it is the later commit, and its workflow run is the
                 // one that actually finishes. Fall back to the PUT if GitHub returned no commit sha.
@@ -388,7 +459,13 @@ else
             }
             else
             {
-                string commitMessage = $"admin: update {_descriptor.Slug} entry {StripExtension(newFileName)}";
+                string updateVerb = intent switch
+                {
+                    SaveIntent.Publish => "publish",
+                    SaveIntent.Unpublish => "unpublish",
+                    _ => "update"
+                };
+                string commitMessage = $"admin: {updateVerb} {_descriptor.Slug} entry {StripExtension(newFileName)}";
                 result = await Api.PutTextFileAsync(newPath, fileText, commitMessage, _existingSha);
             }
 
