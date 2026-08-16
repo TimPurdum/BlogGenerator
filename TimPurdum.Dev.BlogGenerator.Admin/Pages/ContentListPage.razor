@@ -45,6 +45,10 @@ else
     }
     else
     {
+        @* The table and filter render before draft statuses finish loading, so a user who clicks
+           Drafts or Published during that backfill window briefly sees an empty table and "0 of N
+           entries" until statuses arrive. This is deliberate — rendering early lets the list appear
+           immediately instead of waiting on every fetch. *@
         @if (SupportsDrafts)
         {
             <div class="content-filter" role="group" aria-label="Filter by status">
@@ -182,6 +186,8 @@ else
         }
         if (_descriptor is null)
         {
+            // Advancing the counter marks any in-flight load from the previous navigation abandoned.
+            _loadGeneration++;
             _loading = false;
             return;
         }

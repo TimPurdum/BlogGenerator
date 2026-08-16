@@ -1195,6 +1195,8 @@ guard against state (and in-flight requests) from the *previous* content type. R
         }
         if (_descriptor is null)
         {
+            // Advancing the counter marks any in-flight load from the previous navigation abandoned.
+            _loadGeneration++;
             _loading = false;
             return;
         }
@@ -1302,6 +1304,10 @@ since moved away from discards its results instead of overwriting the current pa
 Above the `<table>` (line 48), add the filter control:
 
 ```razor
+        @* The table and filter render before draft statuses finish loading, so a user who clicks
+           Drafts or Published during that backfill window briefly sees an empty table and "0 of N
+           entries" until statuses arrive. This is deliberate — rendering early lets the list appear
+           immediately instead of waiting on every fetch. *@
         @if (SupportsDrafts)
         {
             <div class="content-filter" role="group" aria-label="Filter by status">
