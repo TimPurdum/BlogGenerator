@@ -491,12 +491,22 @@ else
     {
         if (_descriptor is null) throw new InvalidOperationException("No descriptor.");
         if (string.IsNullOrWhiteSpace(_slug)) throw new InvalidOperationException("Slug is required.");
-        string slug = _slug.Trim().ToLowerInvariant();
-        return _descriptor.NamePattern switch
+        return ComposeFileName(_descriptor.NamePattern, _dateFull, _dateMonth, _slug);
+    }
+
+    /// <summary>
+    /// The one place the <c>YYYY-MM-DD-slug.md</c> naming convention is written. Both the save path and
+    /// the Publish button's label go through here, so the name the button advertises cannot drift from
+    /// the name the save actually produces — which is the whole point of showing it.
+    /// </summary>
+    private static string ComposeFileName(ContentNamePattern pattern, string dateFull, string dateMonth, string slug)
+    {
+        string cleanSlug = slug.Trim().ToLowerInvariant();
+        return pattern switch
         {
-            ContentNamePattern.YearMonth => $"{_dateMonth}-{slug}.md",
-            ContentNamePattern.Plain     => $"{slug}.md",
-            _                            => $"{_dateFull}-{slug}.md"
+            ContentNamePattern.YearMonth => $"{dateMonth}-{cleanSlug}.md",
+            ContentNamePattern.Plain     => $"{cleanSlug}.md",
+            _                            => $"{dateFull}-{cleanSlug}.md"
         };
     }
 
@@ -559,12 +569,14 @@ else
             if (_descriptor.NamePattern == ContentNamePattern.Plain)
                 return null;
 
-            string slug = _slug.Trim().ToLowerInvariant();
-            return _descriptor.NamePattern switch
-            {
-                ContentNamePattern.YearMonth => $"{DateTime.Today:yyyy-MM}-{slug}.md",
-                _ => $"{DateTime.Today:yyyy-MM-dd}-{slug}.md"
-            };
+            // Today's date, not the currently bound one: PublishAsync assigns today to the date field
+            // and then saves, so this is what the resulting filename will be. Shares ComposeFileName
+            // with the save path so the label cannot advertise a name the save would not produce.
+            return ComposeFileName(
+                _descriptor.NamePattern,
+                DateTime.Today.ToString("yyyy-MM-dd"),
+                DateTime.Today.ToString("yyyy-MM"),
+                _slug);
         }
         catch
         {
