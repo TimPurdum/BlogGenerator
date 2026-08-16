@@ -27,10 +27,13 @@ public static class Generator
         BlogSettings = serviceProvider.GetRequiredService<BlogSettings>();
         await using HtmlRenderer renderer = new(_serviceProvider, _loggerFactory);
 
-        List<PostMetaData> posts = MarkupParser.GeneratePostMetaDatas();
-        MusicEntries = MarkupParser.GenerateMusicMetaDatas();
-        ShowEntries = MarkupParser.GenerateShowMetaDatas();
-        GalleryEntries = MarkupParser.GenerateGalleryMetaDatas();
+        // One partition, applied before anything reads the list. navLinks, the render loops, the RSS
+        // feed and the sitemap all consume `posts`, so filtering here covers every surface at once.
+        List<PostMetaData> allPosts = MarkupParser.GeneratePostMetaDatas();
+        List<PostMetaData> posts = allPosts.Where(static p => !p.Draft).ToList();
+        MusicEntries = MarkupParser.GenerateMusicMetaDatas().Where(static m => !m.Draft).ToList();
+        ShowEntries = MarkupParser.GenerateShowMetaDatas().Where(static s => !s.Draft).ToList();
+        GalleryEntries = MarkupParser.GenerateGalleryMetaDatas().Where(static g => !g.Draft).ToList();
 
         List<LinkData> navLinks = [];
         foreach (PostMetaData post in posts)
@@ -39,7 +42,8 @@ public static class Generator
                 post.PublishedDate, post.Author));
         }
 
-        List<PageMetaData> pages = await MarkupParser.GeneratePageMetaDatas(navLinks);
+        List<PageMetaData> allPages = await MarkupParser.GeneratePageMetaDatas(navLinks);
+        List<PageMetaData> pages = allPages.Where(static p => !p.Draft).ToList();
 
         Type rootTemplateType = Assembly.LoadFile(BlogSettings.SourceAssemblyOutputPath!).GetTypes()
                    .FirstOrDefault(t => t.IsSubclassOf(typeof(BaseRootTemplate)))
@@ -48,10 +52,7 @@ public static class Generator
         foreach (PageMetaData page in pages)
         {
             string html = await RenderPage(page, renderer, navLinks, rootTemplateType);
-            string fileName = Path.GetFileNameWithoutExtension(page.Url);
-            if (string.IsNullOrWhiteSpace(fileName) || fileName == Path.DirectorySeparatorChar.ToString())
-                fileName = "index";
-            string filePath = Path.Combine(BlogSettings.OutputWebRootPath, $"{fileName}.html");
+            string filePath = PageOutputPath(page);
             await File.WriteAllTextAsync(filePath, html);
 
             await CreateRazorComponents(page.RazorComponents);
@@ -61,6 +62,7 @@ public static class Generator
         {
             if (!post.Update) continue;
             string html = await RenderPost(post, renderer, navLinks, rootTemplateType);
+            Directory.CreateDirectory(Path.GetDirectoryName(post.OutputPath)!);
             await File.WriteAllTextAsync(post.OutputPath, html);
             await CreateRazorComponents(post.RazorComponents);
         }
@@ -69,6 +71,7 @@ public static class Generator
         {
             if (!music.Update) continue;
             string html = await RenderMusic(music, renderer, navLinks, rootTemplateType);
+            Directory.CreateDirectory(Path.GetDirectoryName(music.OutputPath)!);
             await File.WriteAllTextAsync(music.OutputPath, html);
             await CreateRazorComponents(music.RazorComponents);
         }
@@ -77,6 +80,7 @@ public static class Generator
         {
             if (!show.Update) continue;
             string html = await RenderShow(show, renderer, navLinks, rootTemplateType);
+            Directory.CreateDirectory(Path.GetDirectoryName(show.OutputPath)!);
             await File.WriteAllTextAsync(show.OutputPath, html);
             await CreateRazorComponents(show.RazorComponents);
         }
@@ -85,8 +89,34 @@ public static class Generator
         {
             if (!gallery.Update) continue;
             string html = await RenderGallery(gallery, renderer, navLinks, rootTemplateType);
+            Directory.CreateDirectory(Path.GetDirectoryName(gallery.OutputPath)!);
             await File.WriteAllTextAsync(gallery.OutputPath, html);
             await CreateRazorComponents(gallery.RazorComponents);
+        }
+
+        // Unpublishing has to DELETE generated output, not merely skip it — the .html files are
+        // committed to the consuming repo and served directly, so a skipped file stays live.
+        //
+        // This runs unconditionally, outside the `if (!entry.Update) continue` gates above. Update is
+        // computed from source mtime against output mtime, and a fresh CI checkout stamps every file
+        // with checkout time — deletion inside that gate would work locally and silently no-op in CI.
+        foreach (string removed in OutputSweeper.SweepOrphans(
+                     Path.Combine(BlogSettings.OutputWebRootPath, "post"),
+                     posts.Select(static p => p.OutputPath)))
+        {
+            Console.WriteLine($"Removed unpublished or orphaned output: {removed}");
+        }
+
+        // Pages share OutputWebRootPath with hand-maintained files such as 404.html, so they get a
+        // targeted delete by expected path rather than a sweep.
+        foreach (PageMetaData draftPage in allPages.Where(static p => p.Draft))
+        {
+            string draftPagePath = PageOutputPath(draftPage);
+            if (File.Exists(draftPagePath))
+            {
+                File.Delete(draftPagePath);
+                Console.WriteLine($"Removed unpublished page output: {draftPagePath}");
+            }
         }
 
         // RSS feed — posts merged with music + shows, sorted newest-first.
@@ -270,5 +300,16 @@ public static class Generator
 
             Console.WriteLine($"Created Razor component: {componentFilePath}");
         }
+    }
+
+    /// <summary>Maps a page's URL to its output filename. An empty or root URL is the site index.</summary>
+    private static string PageOutputPath(PageMetaData page)
+    {
+        string fileName = Path.GetFileNameWithoutExtension(page.Url);
+        if (string.IsNullOrWhiteSpace(fileName) || fileName == Path.DirectorySeparatorChar.ToString())
+        {
+            fileName = "index";
+        }
+        return Path.Combine(BlogSettings!.OutputWebRootPath, $"{fileName}.html");
     }
 }
