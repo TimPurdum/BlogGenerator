@@ -26,7 +26,21 @@ public sealed class ContentTypeDescriptor<TFront> : IContentTypeDescriptor where
 
     public Type FrontMatterType => typeof(TFront);
 
-    public object CreateFrontMatter() => new TFront();
+    /// <summary>
+    /// Allocates front matter for a NEW entry. Called only from the editor's /new path, which is what
+    /// makes "new content starts as a draft" safe to express here: a default of <c>true</c> on the
+    /// property itself would make every existing published entry — whose file has no <c>draft</c> key —
+    /// read back as a draft, and the next save would unpublish it.
+    /// </summary>
+    public object CreateFrontMatter()
+    {
+        TFront front = new();
+        if (front is IDraftable draftable)
+        {
+            draftable.Draft = true;
+        }
+        return front;
+    }
 
     public (object Frontmatter, string Body) ParseDocument(string text)
     {

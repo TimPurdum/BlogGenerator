@@ -12,7 +12,7 @@ namespace TimPurdum.Dev.BlogGenerator.Admin.FrontMatter;
 /// pick up via BlogGenerator's <c>ExtraFrontMatter</c> forwarding. Sites that don't have a home
 /// layout will simply ignore them.
 /// </summary>
-public sealed class PageFrontMatter : IHasLastmodified
+public sealed class PageFrontMatter : IHasLastmodified, IDraftable
 {
     [YamlMember(Alias = "layout")] public string Layout { get; set; } = "page";
     [YamlMember(Alias = "title")] public string Title { get; set; } = "";
@@ -22,5 +22,6 @@ public sealed class PageFrontMatter : IHasLastmodified
     [YamlMember(Alias = "heroImage")] public string? HeroImage { get; set; }
     /// <summary>Optional — alt text for the hero image.</summary>
     [YamlMember(Alias = "heroImageAlt")] public string? HeroImageAlt { get; set; }
+    [YamlMember(Alias = "draft")] public bool? Draft { get; set; }
     [YamlMember(Alias = "lastmodified")] public string? Lastmodified { get; set; }
 }

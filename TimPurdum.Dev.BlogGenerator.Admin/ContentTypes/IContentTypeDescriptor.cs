@@ -46,7 +46,8 @@ public interface IContentTypeDescriptor
     /// </summary>
     Func<string, string>? BuildLiveUrl { get; }
 
-    /// <summary>Allocate a fresh, default-initialized front-matter instance.</summary>
+    /// <summary>Allocate front matter for a new entry. Types implementing <see cref="IDraftable"/>
+    /// start as drafts.</summary>
     object CreateFrontMatter();
 
     /// <summary>Parse raw markdown content into (front-matter, body).</summary>

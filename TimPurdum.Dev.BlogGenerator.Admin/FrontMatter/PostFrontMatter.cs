@@ -8,12 +8,13 @@ namespace TimPurdum.Dev.BlogGenerator.Admin.FrontMatter;
 /// properties here, so keep human-friendly fields (Title, Layout) first and machine-managed
 /// fields (Lastmodified) last.
 /// </summary>
-public sealed class PostFrontMatter : IHasLastmodified
+public sealed class PostFrontMatter : IHasLastmodified, IDraftable
 {
     [YamlMember(Alias = "layout")] public string Layout { get; set; } = "post";
     [YamlMember(Alias = "title")] public string Title { get; set; } = "";
     [YamlMember(Alias = "subtitle")] public string? Subtitle { get; set; }
     [YamlMember(Alias = "description")] public string? Description { get; set; }
     [YamlMember(Alias = "author")] public string? Author { get; set; }
+    [YamlMember(Alias = "draft")] public bool? Draft { get; set; }
     [YamlMember(Alias = "lastmodified")] public string? Lastmodified { get; set; }
 }
