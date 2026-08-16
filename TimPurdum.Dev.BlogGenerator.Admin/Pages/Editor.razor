@@ -378,7 +378,13 @@ else
                 result = await Api.PutTextFileAsync(newPath, fileText, putMessage);
 
                 string deleteMessage = $"admin: delete {_descriptor.Slug} entry {StripExtension(OriginalFileName)} (renamed to {slugForCommit})";
-                await Api.DeleteFileAsync(oldPath, _existingSha!, deleteMessage);
+                RepoCommitResult deleteResult = await Api.DeleteFileAsync(oldPath, _existingSha!, deleteMessage);
+                // Track the delete, not the PUT: it is the later commit, and its workflow run is the
+                // one that actually finishes. Fall back to the PUT if GitHub returned no commit sha.
+                if (!string.IsNullOrEmpty(deleteResult.CommitSha))
+                {
+                    result = result with { CommitSha = deleteResult.CommitSha };
+                }
             }
             else
             {

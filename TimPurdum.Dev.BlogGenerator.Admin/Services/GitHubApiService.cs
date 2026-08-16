@@ -96,8 +96,13 @@ public sealed class GitHubApiService(HttpClient http, AuthService auth, BlogAdmi
         return wrapped?.WorkflowRuns?.FirstOrDefault();
     }
 
-    /// <summary>Delete a file at <paramref name="path"/>. <paramref name="sha"/> is required.</summary>
-    public async Task DeleteFileAsync(string path, string sha, string commitMessage, CancellationToken ct = default)
+    /// <summary>
+    /// Delete a file at <paramref name="path"/>. <paramref name="sha"/> is required. Returns the
+    /// resulting commit so callers doing a two-phase rename can track the LAST commit — the workflow
+    /// run for an earlier commit in the same rename gets superseded and canceled.
+    /// </summary>
+    public async Task<RepoCommitResult> DeleteFileAsync(string path, string sha, string commitMessage,
+        CancellationToken ct = default)
     {
         DeleteBody body = new(commitMessage, sha);
         using HttpRequestMessage req = new(HttpMethod.Delete, ContentsUrl(path))
@@ -107,6 +112,9 @@ public sealed class GitHubApiService(HttpClient http, AuthService auth, BlogAdmi
         ApplyAuth(req);
         HttpResponseMessage res = await http.SendAsync(req, ct);
         res.EnsureSuccessStatusCode();
+        // A delete response carries a null `content` and a populated `commit`; PutResponse models both.
+        PutResponse? wrapped = await res.Content.ReadFromJsonAsync<PutResponse>(JsonOptions, ct);
+        return new RepoCommitResult(path, string.Empty, wrapped?.Commit?.Sha ?? string.Empty);
     }
 
     private string ContentsUrl(string path)
