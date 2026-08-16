@@ -162,6 +162,15 @@ In `TimPurdum.Dev.BlogGenerator.Compiler/FrontMatter.cs`, add after `GetDateTime
     }
 ```
 
+> **Post-review update (final whole-branch review, 2026-08-16):** the shipped `GetBool` differs from
+> the snippet above in one respect: the semantic in this section — return `@default` for an
+> unrecognized value rather than throwing — is unchanged, but the default arm now also logs
+> `Console.WriteLine($"Warning: front matter key '{key}' has an unrecognized boolean value '{value}'; " +
+> "treating it as {...}.")` via a small `WarnUnrecognized` helper, so a typo like `draft: ture` is
+> visible in build output instead of silently publishing. No new test data rows were needed; the
+> existing `GetBool_ReturnsDefault_ForUnrecognizedValue` test still asserts the return value, which
+> did not change.
+
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `dotnet test TimPurdum.Dev.BlogGenerator.Tests/TimPurdum.Dev.BlogGenerator.Tests.csproj`
@@ -550,6 +559,12 @@ For `PageMetaData`, append after the existing `LastModified` parameter:
     bool Draft = false);
 ```
 
+> **Post-review update (final whole-branch review, 2026-08-16):** the shipped `PostMetaData.Draft`
+> also carries `= false`, matching `PageMetaData`/`MusicMetaData`/`ShowMetaData`/`GalleryMetaData`
+> rather than staying the one required positional parameter. `MarkupParser.GeneratePostMetaData` is
+> the only construction site and already passed `draft` explicitly, so this is a signature-only change
+> with no call-site impact.
+
 In `TimPurdum.Dev.BlogGenerator.Shared/ContentMetaData.cs`, append the same defaulted parameter to `MusicMetaData`, `ShowMetaData`, and `GalleryMetaData`:
 
 ```csharp
@@ -583,10 +598,20 @@ Third, in `GeneratePageMetaDataFromMarkdown`, read `frontMatter.GetBool("draft")
 
 Delete the `Directory.CreateDirectory(outputFolder);` call at `MarkupParser.cs:66` and the `Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);` call at line 350. Both run before anything knows whether the entry will be written, so a draft would leave empty dated directories behind. Task 4 creates the directory at each write site instead.
 
+> **Post-review update (final whole-branch review, 2026-08-16):** the final review found that
+> `GeneratePostMetaData`'s pre-existing catch block (untouched by the steps above) swallowed every
+> parse exception and returned `null`, silently dropping the post from the list Task 4's sweep treats
+> as the claim set — the exact condition under which a YAML typo deletes a live page on a green build.
+> It now rethrows as `InvalidOperationException` naming the file. `DraftPartitionTests.cs` gained a
+> fourth test, `GeneratePostMetaDatas_ThrowsOnMalformedFrontMatter`, asserting exactly that: a post
+> with an unterminated quoted scalar makes `GeneratePostMetaDatas` throw rather than return a short
+> list. `ParseEntryFile` and page parsing were checked against the same hazard and left unchanged —
+> see the note under Task 4 Step 4 for why neither has a delete consequence to guard against.
+
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `dotnet test TimPurdum.Dev.BlogGenerator.Tests/TimPurdum.Dev.BlogGenerator.Tests.csproj`
-Expected: PASS, 21 tests total.
+Expected: PASS, 21 tests total (24 as of the post-review update above, once later tasks' tests are also in place).
 
 - [ ] **Step 7: Commit**
 
@@ -708,6 +733,31 @@ Add after the gallery render loop (after line 90), before the RSS feed is genera
 ```
 
 Do not sweep the `music`, `show`, or `gallery` roots yet. No shipped front-matter model marks those as drafts, and pointing a delete sweep at a root nothing populates is a risk with no payoff. Add it in the same shape when a site adopts drafts there.
+
+> **Post-review update (final whole-branch review, 2026-08-16):** the single log line above was
+> ambiguous about *why* a file was removed, and this task's original code left the parse-failure
+> hazard undiagnosed. The shipped `Generator.cs` differs from the snippet above in two ways:
+>
+> 1. The sweep log is split by cause. A path claimed by a draft post's own `OutputPath` logs
+>    `"Removed unpublished output: {path}"`; a path claimed by nothing (a rename or a deleted source
+>    file) logs `"Removed orphaned output (no matching entry -- renamed or source deleted): {path}"`.
+>    This depends on a `draftPostOutputPaths` lookup built from `allPosts.Where(p => p.Draft)` before
+>    the sweep call.
+> 2. Music, show, and gallery drafts get a diagnostic-only warning instead of silence: after the page
+>    delete loop, three more loops (one per type, over the unfiltered `allMusic`/`allShows`/
+>    `allGalleries` lists this task's Step 1 must therefore keep around rather than discarding) check
+>    `File.Exists` on each draft entry's `OutputPath` and, if the file is still there, log a warning
+>    naming the entry and telling the reader to remove it by hand. Nothing is deleted — the "do not
+>    sweep… yet" reasoning above still holds; only the silence changed.
+>
+> Separately, `MarkupParser.GeneratePostMetaData`'s catch block (pre-existing code this task's Step 4
+> does not modify) was found to swallow every parse exception and return `null`, which drops the post
+> from `allPosts` entirely — the exact condition that makes the sweep above delete that post's live
+> HTML as an "orphan," on a green build. It now rethrows as `InvalidOperationException` naming the
+> file, aborting the build instead. `ParseEntryFile` (music/show/gallery) and page parsing keep their
+> original catch-and-skip behavior: neither of those output roots is swept (music/show/gallery per
+> the warning above, pages via the targeted per-path delete against `allPages` above), so a parse
+> failure there has no delete consequence to guard against.
 
 - [ ] **Step 5: Verify the build and full test run**
 
@@ -1059,6 +1109,11 @@ In the header block, after the `Editing <code>` paragraph (line 23), add:
         </p>
     }
 ```
+
+> **Post-review update (final whole-branch review, 2026-08-16):** the guard above renders the badge
+> whenever a descriptor exists and the page isn't loading, with no check for a load error. That let a
+> file which failed to load show a "Published" pill above the "Couldn't load file" alert. The shipped
+> guard adds `&& _error is null`.
 
 In the `.editor-actions` div (lines 105 to 108), add the action button between Save and Cancel:
 
@@ -1449,6 +1504,16 @@ erased and the entry published.
 ````
 
 Also add a `### Upgrading from 1.4.x` note recording that `GitHubApiService.DeleteFileAsync` now returns `Task<RepoCommitResult>` instead of `Task`. Callers that ignore the result are unaffected.
+
+> **Post-review update (final whole-branch review, 2026-08-16):** `TimPurdum.Dev.BlogGenerator/ReadMe.md`
+> (the core, packed NuGet readme — not the Admin readme this task otherwise covers) already carried a
+> prose-only "Drafts" section from an earlier commit, but with no YAML example, unlike every other
+> front-matter section in that file, and it still claimed ".NET 9.0" as the target framework against
+> the actual `<TargetFramework>net10.0</TargetFramework>` on every shipped `.csproj`. Both were fixed:
+> the section now includes a fenced `draft: true` example plus a sentence warning that the compiler
+> accepts other truthy scalars (`1`, `yes`) but the admin editor's YAML model only recognizes
+> `true`/`false` and will fail to parse a file using one of those, and the Dependencies section now
+> reads ".NET 10.0".
 
 - [ ] **Step 2: Bump both package versions**
 
