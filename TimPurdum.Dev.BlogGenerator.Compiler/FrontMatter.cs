@@ -39,6 +39,24 @@ public class FrontMatter
         };
 
     /// <summary>
+    /// Reads a YAML boolean. Accepts the YAML 1.1 truthy/falsy scalar set (<c>true/yes/y/on/1</c> and
+    /// <c>false/no/n/off/0</c>), case-insensitively, because front matter is hand-written as often as
+    /// it is generated. An unrecognized value returns <paramref name="default"/> rather than throwing.
+    /// </summary>
+    public bool GetBool(string key, bool @default = false)
+    {
+        if (!_data.TryGetValue(key, out object? v) || v is null) return @default;
+        if (v is bool b) return b;
+
+        return v.ToString()?.Trim().ToLowerInvariant() switch
+        {
+            "true" or "yes" or "y" or "on" or "1" => true,
+            "false" or "no" or "n" or "off" or "0" => false,
+            _ => @default
+        };
+    }
+
+    /// <summary>
     /// Returns indented-sequence-of-mapping values (e.g. <c>images:\n  - src: ...\n    caption: ...</c>)
     /// as a list of string→string dictionaries. Shallow flatten only — nested mappings stringify;
     /// promote them to typed access if needed.
