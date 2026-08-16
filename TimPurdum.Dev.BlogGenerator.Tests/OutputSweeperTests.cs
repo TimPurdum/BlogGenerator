@@ -51,14 +51,40 @@ public sealed class OutputSweeperTests
     }
 
     [TestMethod]
-    public void SweepOrphans_MatchesClaimsGivenAsRelativePaths()
+    public void SweepOrphans_MatchesClaimsWithRedundantDotSegment()
     {
         string kept = WriteHtml("2026", "8", "15", "live-post.html");
-        string relative = Path.Combine(_root, ".", "2026", "8", "15", "live-post.html");
+        string claimWithDotSegment = Path.Combine(_root, ".", "2026", "8", "15", "live-post.html");
 
-        OutputSweeper.SweepOrphans(_root, [relative]);
+        OutputSweeper.SweepOrphans(_root, [claimWithDotSegment]);
 
         Assert.IsTrue(File.Exists(kept), "A claim that normalizes to the same file must not be swept.");
+    }
+
+    [TestMethod]
+    public void SweepOrphans_ThrowsOnNonRootedClaim()
+    {
+        string kept = WriteHtml("2026", "8", "15", "live-post.html");
+        string nonRootedClaim = Path.Combine("2026", "8", "15", "live-post.html");
+
+        Assert.ThrowsExactly<ArgumentException>(() => OutputSweeper.SweepOrphans(_root, [nonRootedClaim]));
+        Assert.IsTrue(File.Exists(kept), "A malformed claim must not cause the file it names to be deleted.");
+    }
+
+    [TestMethod]
+    public void SweepOrphans_KeepsClaimedAndDeletesUnclaimed_InSameDirectory()
+    {
+        string kept = WriteHtml("2026", "8", "15", "live-post.html");
+        string orphan = WriteHtml("2026", "8", "15", "unpublished-post.html");
+
+        IReadOnlyList<string> deleted = OutputSweeper.SweepOrphans(_root, [kept]);
+
+        Assert.IsTrue(File.Exists(kept));
+        Assert.IsFalse(File.Exists(orphan));
+        Assert.AreEqual(1, deleted.Count);
+        Assert.IsTrue(
+            Directory.Exists(Path.Combine(_root, "2026", "8", "15")),
+            "A directory still holding a claimed file must not be pruned.");
     }
 
     [TestMethod]

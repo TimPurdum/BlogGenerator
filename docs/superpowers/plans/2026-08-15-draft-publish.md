@@ -246,14 +246,40 @@ public sealed class OutputSweeperTests
     }
 
     [TestMethod]
-    public void SweepOrphans_MatchesClaimsGivenAsRelativePaths()
+    public void SweepOrphans_MatchesClaimsWithRedundantDotSegment()
     {
         string kept = WriteHtml("2026", "8", "15", "live-post.html");
-        string relative = Path.Combine(_root, ".", "2026", "8", "15", "live-post.html");
+        string claimWithDotSegment = Path.Combine(_root, ".", "2026", "8", "15", "live-post.html");
 
-        OutputSweeper.SweepOrphans(_root, [relative]);
+        OutputSweeper.SweepOrphans(_root, [claimWithDotSegment]);
 
         Assert.IsTrue(File.Exists(kept), "A claim that normalizes to the same file must not be swept.");
+    }
+
+    [TestMethod]
+    public void SweepOrphans_ThrowsOnNonRootedClaim()
+    {
+        string kept = WriteHtml("2026", "8", "15", "live-post.html");
+        string nonRootedClaim = Path.Combine("2026", "8", "15", "live-post.html");
+
+        Assert.ThrowsExactly<ArgumentException>(() => OutputSweeper.SweepOrphans(_root, [nonRootedClaim]));
+        Assert.IsTrue(File.Exists(kept), "A malformed claim must not cause the file it names to be deleted.");
+    }
+
+    [TestMethod]
+    public void SweepOrphans_KeepsClaimedAndDeletesUnclaimed_InSameDirectory()
+    {
+        string kept = WriteHtml("2026", "8", "15", "live-post.html");
+        string orphan = WriteHtml("2026", "8", "15", "unpublished-post.html");
+
+        IReadOnlyList<string> deleted = OutputSweeper.SweepOrphans(_root, [kept]);
+
+        Assert.IsTrue(File.Exists(kept));
+        Assert.IsFalse(File.Exists(orphan));
+        Assert.AreEqual(1, deleted.Count);
+        Assert.IsTrue(
+            Directory.Exists(Path.Combine(_root, "2026", "8", "15")),
+            "A directory still holding a claimed file must not be pruned.");
     }
 
     [TestMethod]
@@ -323,13 +349,35 @@ public static class OutputSweeper
         if (!Directory.Exists(outputRoot)) return [];
 
         // Compare on normalized absolute paths: claims are built by string concatenation elsewhere in
-        // the compiler and can carry "." segments or mixed separators.
+        // the compiler and can carry redundant "." or ".." segments, which Path.GetFullPath collapses.
+        // Every claim must already be rooted -- see the guard below -- because GetFullPath resolves a
+        // relative path against the process's current directory, not outputRoot.
+        List<string> claimedPathList = claimedPaths.ToList();
+        foreach (string claim in claimedPathList)
+        {
+            if (!Path.IsPathRooted(claim))
+            {
+                throw new ArgumentException(
+                    $"Claimed path '{claim}' is not rooted. All claims must be absolute paths under " +
+                    $"'{outputRoot}', or a relative claim can resolve against the wrong directory and " +
+                    "the live file it names would be swept as an orphan.",
+                    nameof(claimedPaths));
+            }
+        }
+
+        // Ordinal-ignore-case because on Windows two spellings of the same name (e.g. "Live-Post.html"
+        // vs. "live-post.html") are the same file, and a case-sensitive comparison would treat a claimed
+        // file as unclaimed and delete a live page. The tradeoff: on a case-sensitive filesystem, an
+        // orphan differing from a claim only by case survives the sweep -- the harmless direction.
         HashSet<string> claimed = new(
-            claimedPaths.Select(Path.GetFullPath),
+            claimedPathList.Select(Path.GetFullPath),
             StringComparer.OrdinalIgnoreCase);
 
         List<string> deleted = [];
-        foreach (string file in Directory.EnumerateFiles(outputRoot, "*.html", SearchOption.AllDirectories))
+        List<string> files = Directory
+            .EnumerateFiles(outputRoot, "*.html", SearchOption.AllDirectories)
+            .ToList();
+        foreach (string file in files)
         {
             string full = Path.GetFullPath(file);
             if (claimed.Contains(full)) continue;
@@ -363,7 +411,7 @@ public static class OutputSweeper
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `dotnet test TimPurdum.Dev.BlogGenerator.Tests/TimPurdum.Dev.BlogGenerator.Tests.csproj`
-Expected: PASS, 18 tests total.
+Expected: PASS, 20 tests total.
 
 - [ ] **Step 5: Commit**
 
