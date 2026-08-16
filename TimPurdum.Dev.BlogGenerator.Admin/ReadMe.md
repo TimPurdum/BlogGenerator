@@ -154,9 +154,12 @@ draft's filename date is a scratch value, and this keeps a post that sat for thr
 publishing buried mid-archive. That is a rename, so it is two commits. Pages and other `Plain`-named
 types keep their filename, because for them the filename is the URL.
 
-Unpublishing keeps the filename and removes the generated HTML on the next build. The compiler
-prunes any generated `.html` under the post output root that no published entry claims, which also
-cleans up after renames and deletions.
+Unpublishing keeps the filename and removes the generated HTML on the next build. For posts the
+compiler sweeps the post output root, deleting any generated `.html` no published entry claims —
+which also cleans up after renames and deletions. Pages get a targeted delete by expected path
+instead, because page output shares a directory with hand-maintained files such as `404.html`. A
+custom content type whose output lives under its own root needs the equivalent sweep on the
+compiler side: drafting it stops new output but does not remove a file already published.
 
 ### Opting a custom content type in
 
