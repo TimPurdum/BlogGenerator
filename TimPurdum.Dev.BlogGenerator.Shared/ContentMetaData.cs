@@ -14,7 +14,9 @@ public record MusicMetaData(
     string Content, Dictionary<string, string> RazorComponents,
     List<string> ScriptTags, string Layout, string Description,
     string OutputPath, bool Update,
-    Dictionary<string, object?> ExtraParameters);
+    Dictionary<string, object?> ExtraParameters,
+    /// <summary>True when frontmatter carries <c>draft: true</c>. Draft entries render nowhere.</summary>
+    bool Draft = false);
 
 /// <summary>
 /// A show / event entry. <see cref="PerformanceDate"/> is the actual show date (also embedded in the URL),
@@ -25,7 +27,9 @@ public record ShowMetaData(
     string Content, Dictionary<string, string> RazorComponents,
     List<string> ScriptTags, string Layout, string Description,
     string OutputPath, bool Update,
-    Dictionary<string, object?> ExtraParameters);
+    Dictionary<string, object?> ExtraParameters,
+    /// <summary>True when frontmatter carries <c>draft: true</c>. Draft entries render nowhere.</summary>
+    bool Draft = false);
 
 /// <summary>
 /// A photo gallery entry. <see cref="Images"/> is exposed both as a typed list here and inside
@@ -37,4 +41,6 @@ public record GalleryMetaData(
     List<string> ScriptTags, string Layout, string Description,
     string OutputPath, bool Update,
     List<GalleryImage> Images,
-    Dictionary<string, object?> ExtraParameters);
+    Dictionary<string, object?> ExtraParameters,
+    /// <summary>True when frontmatter carries <c>draft: true</c>. Draft entries render nowhere.</summary>
+    bool Draft = false);

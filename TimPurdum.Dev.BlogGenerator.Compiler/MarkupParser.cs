@@ -56,14 +56,14 @@ public static class MarkupParser
                 {
                     fileLastModified = lastModified.Value;
                 }
-                
+                bool draft = frontMatter.GetBool("draft");
+
                 string outputFolder = Path.Combine(
                     Generator.BlogSettings!.OutputWebRootPath,
                     "post",
                     publishedDate.Year.ToString(),
                     publishedDate.Month.ToString(),
                     publishedDate.Day.ToString());
-                Directory.CreateDirectory(outputFolder);
                 string outFilePath = Path.Combine(outputFolder, $"{fileName}.html");
                 DateTime outFileLastModified = File.Exists(outFilePath)
                     ? File.GetLastWriteTimeUtc(outFilePath)
@@ -103,8 +103,8 @@ public static class MarkupParser
                     File.WriteAllText(post, newYamlBuilder.ToString());
                 }
 
-                return new PostMetaData(title, subTitle, urlPath, publishedDate, authorName, postContent, 
-                    razorComponentSections, scripts, layout, description, outFilePath, update);
+                return new PostMetaData(title, subTitle, urlPath, publishedDate, authorName, postContent,
+                    razorComponentSections, scripts, layout, description, outFilePath, update, draft);
             }
             catch (Exception ex)
             {
@@ -166,7 +166,8 @@ public static class MarkupParser
                 description,
                 parsed.OutputPath,
                 parsed.Update,
-                extra));
+                extra,
+                Draft: parsed.Draft));
         }
         return result;
     }
@@ -219,7 +220,8 @@ public static class MarkupParser
                 description,
                 parsed.OutputPath,
                 parsed.Update,
-                extra));
+                extra,
+                Draft: parsed.Draft));
         }
         return result;
     }
@@ -278,7 +280,8 @@ public static class MarkupParser
                 parsed.OutputPath,
                 parsed.Update,
                 images,
-                extra));
+                extra,
+                Draft: parsed.Draft));
         }
         return result;
     }
@@ -293,7 +296,8 @@ public static class MarkupParser
         List<string> ScriptTags,
         string OutputPath,
         bool Update,
-        List<string> MarkdownLines);
+        List<string> MarkdownLines,
+        bool Draft);
 
     /// <summary>
     /// Reads, regex-matches, frontmatter-parses, lastmodified-merges, and markdown-renders an entry file.
@@ -345,9 +349,9 @@ public static class MarkupParser
             {
                 fileLastModified = lastModified.Value;
             }
+            bool draft = frontMatter.GetBool("draft");
 
             string outputPath = outputPathResolver(slug, date);
-            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             DateTime outFileLastModified = File.Exists(outputPath)
                 ? File.GetLastWriteTimeUtc(outputPath)
                 : DateTime.MinValue;
@@ -360,7 +364,7 @@ public static class MarkupParser
             string content = ParseMarkdownLines(markdownLines, ref resultLines, ref razorComponents, ref scripts);
 
             return new ParsedEntry(slug, date, frontMatter, content, razorComponents, scripts,
-                outputPath, update, markdownLines);
+                outputPath, update, markdownLines, draft);
         }
         catch (Exception ex)
         {
@@ -453,6 +457,7 @@ public static class MarkupParser
         string layout = frontMatter.GetString("layout", "page");
         layout = $"{layout.ToUpperFirstChar()}Layout";
         string description = frontMatter.GetString("description");
+        bool draft = frontMatter.GetBool("draft");
 
         // Forward any non-standard frontmatter fields as ExtraFrontMatter so custom layouts can declare
         // typed [Parameter] props for arbitrary keys (e.g. heroImage on the home page).
@@ -472,12 +477,13 @@ public static class MarkupParser
         return new PageMetaData(title, subTitle, urlPath, postContent,
             razorComponentSections, scripts, layout, description, navOrder,
             extras.Count > 0 ? extras : null,
-            lastModified);
+            lastModified,
+            Draft: draft);
     }
 
     /// <summary>Keys that already flow through dedicated PageMetaData fields and shouldn't be re-emitted as extras.</summary>
     private static readonly HashSet<string> StandardPageFrontMatterKeys =
-        new(StringComparer.OrdinalIgnoreCase) { "title", "subtitle", "description", "layout", "navorder", "lastmodified" };
+        new(StringComparer.OrdinalIgnoreCase) { "title", "subtitle", "description", "layout", "navorder", "lastmodified", "draft" };
     
     private static string ParseMarkdownLines(List<string> markdownLines,
         ref List<string> resultLines,
