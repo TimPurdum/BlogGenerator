@@ -53,7 +53,7 @@ That erasure is a pre-existing behavior, not something this feature introduces. 
 
 ### New content defaults to draft
 
-`ContentTypeDescriptor.CreateFrontMatter()` (`ContentTypes/ContentTypeDescriptor.cs:29`) is called from exactly one place: the new-document path in `Editor.razor:190`. Set `Draft = true` there, on the freshly constructed instance, when it implements `IDraftable`.
+`IContentTypeDescriptor` gets a second allocator, `CreateFrontMatterForNewEntry()`, alongside the existing `CreateFrontMatter()`. `Editor.razor`'s `OnParametersSetAsync` calls `CreateFrontMatter()` unconditionally near the top of the method — on both the new-entry and edit-existing-entry routes — as the reset that guarantees a valid typed instance even if a load fails, and on the edit route the result is immediately replaced by `ParseDocument`. Only the new-entry branch (`string.IsNullOrEmpty(File)`) calls `CreateFrontMatterForNewEntry()`, which sets `Draft = true` on the freshly constructed instance when it implements `IDraftable`. Splitting the two allocators keeps the draft default out of the shared path that edit-existing-entry also runs through.
 
 This must not be expressed as a `true` default on the property. Every existing published post would then deserialize as a draft — its front matter has no `draft` key, so the property keeps its default — and the next save in the admin would unpublish it.
 

@@ -26,13 +26,19 @@ public sealed class ContentTypeDescriptor<TFront> : IContentTypeDescriptor where
 
     public Type FrontMatterType => typeof(TFront);
 
+    /// <summary>Allocates a default-initialized front-matter instance.</summary>
+    public object CreateFrontMatter() => new TFront();
+
     /// <summary>
-    /// Allocates front matter for a NEW entry. Called only from the editor's /new path, which is what
-    /// makes "new content starts as a draft" safe to express here: a default of <c>true</c> on the
-    /// property itself would make every existing published entry — whose file has no <c>draft</c> key —
-    /// read back as a draft, and the next save would unpublish it.
+    /// Allocate front matter for a NEW entry. Identical to <see cref="CreateFrontMatter"/> except that
+    /// types implementing <see cref="IDraftable"/> start as drafts, so nothing reaches the public site
+    /// before its author publishes it.
+    ///
+    /// Kept separate from <see cref="CreateFrontMatter"/> because the editor allocates front matter on
+    /// every load, including when opening an existing entry — defaulting to draft in the shared
+    /// allocator would flag published entries as drafts while their file loads.
     /// </summary>
-    public object CreateFrontMatter()
+    public object CreateFrontMatterForNewEntry()
     {
         TFront front = new();
         if (front is IDraftable draftable)

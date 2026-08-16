@@ -732,11 +732,13 @@ git commit -m "feat(compiler): render only published content and delete unpublis
 - Create: `TimPurdum.Dev.BlogGenerator.Admin/ContentTypes/IDraftable.cs`
 - Modify: `TimPurdum.Dev.BlogGenerator.Admin/FrontMatter/PostFrontMatter.cs`
 - Modify: `TimPurdum.Dev.BlogGenerator.Admin/FrontMatter/PageFrontMatter.cs`
-- Modify: `TimPurdum.Dev.BlogGenerator.Admin/ContentTypes/ContentTypeDescriptor.cs:29`
+- Modify: `TimPurdum.Dev.BlogGenerator.Admin/ContentTypes/ContentTypeDescriptor.cs`
+- Modify: `TimPurdum.Dev.BlogGenerator.Admin/ContentTypes/IContentTypeDescriptor.cs`
+- Modify: `TimPurdum.Dev.BlogGenerator.Admin/Pages/Editor.razor`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `interface IDraftable { bool? Draft { get; set; } }` in namespace `TimPurdum.Dev.BlogGenerator.Admin.ContentTypes`. Used by Tasks 8 and 9.
+- Produces: `interface IDraftable { bool? Draft { get; set; } }` in namespace `TimPurdum.Dev.BlogGenerator.Admin.ContentTypes`. Used by Tasks 8 and 9. Also produces `IContentTypeDescriptor.CreateFrontMatterForNewEntry()`, a breaking addition to the public interface.
 
 - [ ] **Step 1: Create the interface**
 
@@ -784,24 +786,23 @@ public sealed class PostFrontMatter : IHasLastmodified, IDraftable
 
 Make the same two changes in `PageFrontMatter.cs`: add `IDraftable` to the base list and add the `draft` property immediately before `Lastmodified`.
 
-- [ ] **Step 3: Default new content to draft**
+- [ ] **Step 3: Default new content to draft via a separate allocator**
 
-In `ContentTypeDescriptor.cs`, replace line 29:
+`ContentTypeDescriptor<TFront>.CreateFrontMatter()` stays exactly as it is — `public object CreateFrontMatter() => new TFront();` — because `Editor.razor`'s `OnParametersSetAsync` calls it unconditionally near the top of the method, on both the new-entry and edit-existing-entry routes, as the reset that guarantees a valid typed instance even if a load fails. Stamping `Draft = true` inside `CreateFrontMatter()` would make that shared call flag published entries as drafts for the moment between allocation and the edit route's `ParseDocument` replacing it — no observable bug today, but a hazard the next reader could easily reintroduce.
 
-```csharp
-    public object CreateFrontMatter() => new TFront();
-```
-
-with:
+Instead, add a second allocator to `ContentTypeDescriptor.cs`:
 
 ```csharp
     /// <summary>
-    /// Allocates front matter for a NEW entry. Called only from the editor's /new path, which is what
-    /// makes "new content starts as a draft" safe to express here: a default of <c>true</c> on the
-    /// property itself would make every existing published entry — whose file has no <c>draft</c> key —
-    /// read back as a draft, and the next save would unpublish it.
+    /// Allocate front matter for a NEW entry. Identical to <see cref="CreateFrontMatter"/> except that
+    /// types implementing <see cref="IDraftable"/> start as drafts, so nothing reaches the public site
+    /// before its author publishes it.
+    ///
+    /// Kept separate from <see cref="CreateFrontMatter"/> because the editor allocates front matter on
+    /// every load, including when opening an existing entry — defaulting to draft in the shared
+    /// allocator would flag published entries as drafts while their file loads.
     /// </summary>
-    public object CreateFrontMatter()
+    public object CreateFrontMatterForNewEntry()
     {
         TFront front = new();
         if (front is IDraftable draftable)
@@ -812,15 +813,38 @@ with:
     }
 ```
 
-- [ ] **Step 4: Correct the interface doc comment**
-
-`CreateFrontMatter` is no longer purely "default-initialized", so update its summary in `TimPurdum.Dev.BlogGenerator.Admin/ContentTypes/IContentTypeDescriptor.cs:49`:
+In `Editor.razor`'s `OnParametersSetAsync`, inside the new-entry branch (`if (string.IsNullOrEmpty(File))`), call the new allocator before `_loading = false;`:
 
 ```csharp
-    /// <summary>Allocate front matter for a new entry. Types implementing <see cref="IDraftable"/>
-    /// start as drafts.</summary>
-    object CreateFrontMatter();
+        if (string.IsNullOrEmpty(File))
+        {
+            _frontmatter = _descriptor.CreateFrontMatterForNewEntry();
+            _loading = false;
+            return;
+        }
 ```
+
+- [ ] **Step 4: Add the new allocator to the interface**
+
+Add the matching member to `TimPurdum.Dev.BlogGenerator.Admin/ContentTypes/IContentTypeDescriptor.cs`, alongside the unchanged `CreateFrontMatter()`:
+
+```csharp
+    /// <summary>Allocates a default-initialized front-matter instance.</summary>
+    object CreateFrontMatter();
+
+    /// <summary>
+    /// Allocate front matter for a NEW entry. Identical to <see cref="CreateFrontMatter"/> except that
+    /// types implementing <see cref="IDraftable"/> start as drafts, so nothing reaches the public site
+    /// before its author publishes it.
+    ///
+    /// Kept separate from <see cref="CreateFrontMatter"/> because the editor allocates front matter on
+    /// every load, including when opening an existing entry — defaulting to draft in the shared
+    /// allocator would flag published entries as drafts while their file loads.
+    /// </summary>
+    object CreateFrontMatterForNewEntry();
+```
+
+Note: this adds a public member to `IContentTypeDescriptor`, which is a breaking change for any consuming site that implements the interface directly rather than going through `AddContentType<TFront, TForm>`. Record this in the package's upgrade notes.
 
 - [ ] **Step 5: Verify the build**
 

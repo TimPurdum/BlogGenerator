@@ -46,9 +46,19 @@ public interface IContentTypeDescriptor
     /// </summary>
     Func<string, string>? BuildLiveUrl { get; }
 
-    /// <summary>Allocate front matter for a new entry. Types implementing <see cref="IDraftable"/>
-    /// start as drafts.</summary>
+    /// <summary>Allocates a default-initialized front-matter instance.</summary>
     object CreateFrontMatter();
+
+    /// <summary>
+    /// Allocate front matter for a NEW entry. Identical to <see cref="CreateFrontMatter"/> except that
+    /// types implementing <see cref="IDraftable"/> start as drafts, so nothing reaches the public site
+    /// before its author publishes it.
+    ///
+    /// Kept separate from <see cref="CreateFrontMatter"/> because the editor allocates front matter on
+    /// every load, including when opening an existing entry — defaulting to draft in the shared
+    /// allocator would flag published entries as drafts while their file loads.
+    /// </summary>
+    object CreateFrontMatterForNewEntry();
 
     /// <summary>Parse raw markdown content into (front-matter, body).</summary>
     (object Frontmatter, string Body) ParseDocument(string text);

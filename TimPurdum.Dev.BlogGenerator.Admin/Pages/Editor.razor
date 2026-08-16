@@ -197,6 +197,7 @@ else
 
         if (string.IsNullOrEmpty(File))
         {
+            _frontmatter = _descriptor.CreateFrontMatterForNewEntry();
             _loading = false;
             return;
         }
