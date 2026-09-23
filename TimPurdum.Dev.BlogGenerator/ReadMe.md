@@ -78,6 +78,29 @@ Use blazor-component code blocks to embed interactive components:
 Posts must follow the naming pattern: `YYYY-MM-DD-title.md`
 - Example: `2025-08-06-my-blog-post.md`
 
+## Drafts
+
+Front matter on any content type can carry `draft: true`. An absent `draft` key means published,
+so existing content needs no migration.
+
+```markdown
+---
+layout: post
+title: "Your Post Title"
+draft: true
+---
+```
+
+Write `draft: true` exactly like that. The compiler also accepts other YAML truthy scalars such as
+`1` or `yes`, but the admin editor's front-matter model only recognizes `true`/`false` and will fail
+to parse a file that uses one of those instead.
+
+A draft is excluded from its generated HTML, the RSS feed, and `sitemap.xml`. For posts and
+pages, unpublishing something that was previously published also removes its already-generated
+output on the next build. Music, show, and gallery entries are excluded from rendering the same
+way when marked draft, but their previously generated output is not swept — removing that output
+is the consuming site's responsibility if it adds draft support to a custom collection.
+
 ## Configuration
 
 Configure your blog through `wwwroot/appsettings.json`:
@@ -132,7 +155,7 @@ The generator integrates into the MSBuild process:
 
 ## Dependencies
 
-- **.NET 9.0**: Target framework
+- **.NET 10.0**: Target framework
 - **Markdig**: Markdown processing
 - **Microsoft.AspNetCore.Components.WebAssembly**: Blazor WebAssembly support
 - **Microsoft.AspNetCore.Razor.Language**: Razor template compilation

@@ -45,6 +45,22 @@ else
     }
     else
     {
+        @* The table and filter render before draft statuses finish loading, so a user who clicks
+           Drafts or Published during that backfill window briefly sees an empty table and "0 of N
+           entries" until statuses arrive. This is deliberate — rendering early lets the list appear
+           immediately instead of waiting on every fetch. *@
+        @if (SupportsDrafts)
+        {
+            <div class="content-filter" role="group" aria-label="Filter by status">
+                <button class="admin-button admin-button--small @(_filter == StatusFilter.All ? "" : "admin-button--ghost")"
+                        @onclick="() => _filter = StatusFilter.All">All</button>
+                <button class="admin-button admin-button--small @(_filter == StatusFilter.Drafts ? "" : "admin-button--ghost")"
+                        @onclick="() => _filter = StatusFilter.Drafts">Drafts</button>
+                <button class="admin-button admin-button--small @(_filter == StatusFilter.Published ? "" : "admin-button--ghost")"
+                        @onclick="() => _filter = StatusFilter.Published">Published</button>
+            </div>
+        }
+
         <table class="content-table">
             <thead>
                 <tr>
@@ -53,11 +69,15 @@ else
                         <th class="content-table__date">Date</th>
                     }
                     <th class="content-table__slug">Slug</th>
+                    @if (SupportsDrafts)
+                    {
+                        <th class="content-table__status">Status</th>
+                    }
                     <th class="content-table__actions"><span class="visually-hidden">Actions</span></th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (Row row in _rows)
+                @foreach (Row row in VisibleRows)
                 {
                     <tr class="content-table__row">
                         @if (_descriptor.NamePattern != ContentNamePattern.Plain)
@@ -69,6 +89,21 @@ else
                         <td class="content-table__slug">
                             <a class="content-table__title" href="/admin/@_descriptor.Slug/edit/@Uri.EscapeDataString(row.FileName)">@row.Slug</a>
                         </td>
+                        @if (SupportsDrafts)
+                        {
+                            <td class="content-table__status">
+                                @if (_draftByFile.TryGetValue(row.FileName, out bool isDraft))
+                                {
+                                    <span class="status-pill @(isDraft ? "status-pill--draft" : "status-pill--published")">
+                                        @(isDraft ? "Draft" : "Published")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="status-pill">Unknown</span>
+                                }
+                            </td>
+                        }
                         <td class="content-table__actions">
                             @if (_pendingDelete == row.FileName)
                             {
@@ -89,7 +124,7 @@ else
             </tbody>
         </table>
 
-        <p class="content-table__count">@_rows.Count entries</p>
+        <p class="content-table__count">@VisibleRows.Count of @_rows.Count entries</p>
     }
 }
 
@@ -103,6 +138,34 @@ else
     private string? _pendingDelete;
     private bool _busy;
 
+    /// <summary>Draft status per filename. A missing entry means "not fetched yet or unreadable".</summary>
+    private readonly Dictionary<string, bool> _draftByFile = new(StringComparer.OrdinalIgnoreCase);
+
+    private StatusFilter _filter = StatusFilter.All;
+
+    /// <summary>
+    /// Incremented at the start of every <see cref="LoadAsync"/> call. A callback that resumes after
+    /// a later call has started compares its captured value against the current one and discards its
+    /// results instead of overwriting a newer navigation's state.
+    /// </summary>
+    private int _loadGeneration;
+
+    private enum StatusFilter { All, Drafts, Published }
+
+    private bool SupportsDrafts =>
+        _descriptor is not null && typeof(IDraftable).IsAssignableFrom(_descriptor.FrontMatterType);
+
+    private List<Row> VisibleRows => !SupportsDrafts
+        ? _rows
+        : _filter switch
+        {
+            StatusFilter.Drafts    => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && d).ToList(),
+            // A row missing from the map (fetch failed or parse failed) matches neither Drafts nor
+            // Published — guessing its status would be worse than omitting it, so it only shows under All.
+            StatusFilter.Published => _rows.Where(r => _draftByFile.TryGetValue(r.FileName, out bool d) && !d).ToList(),
+            _                      => _rows
+        };
+
     private string TitleText => _descriptor?.DisplayName ?? "Content";
 
     private string DateFormat => _descriptor?.NamePattern switch
@@ -114,9 +177,17 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        string? previousSlug = _descriptor?.Slug;
         _descriptor = TypeSlug is null ? null : Registry.FindBySlug(TypeSlug);
+        if (_descriptor?.Slug != previousSlug)
+        {
+            // A different content type has nothing to do with the previous type's filter selection.
+            _filter = StatusFilter.All;
+        }
         if (_descriptor is null)
         {
+            // Advancing the counter marks any in-flight load from the previous navigation abandoned.
+            _loadGeneration++;
             _loading = false;
             return;
         }
@@ -126,11 +197,17 @@ else
     private async Task LoadAsync()
     {
         if (_descriptor is null) return;
+        int generation = ++_loadGeneration;
         _loading = true;
         _error = null;
+        // Reset unconditionally — even content types that don't support drafts must not keep showing
+        // stale entries from whatever type was loaded before them.
+        _draftByFile.Clear();
         try
         {
             IReadOnlyList<RepoEntry> entries = await Api.ListDirectoryAsync(_descriptor.ContentPath);
+            if (generation != _loadGeneration) return; // a newer navigation has already started
+
             IEnumerable<Row> parsed = entries
                 .Where(e => e.Type == "file" && e.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
                 .Select(ParseRow)
@@ -139,14 +216,65 @@ else
             _rows = _descriptor.NamePattern == ContentNamePattern.Plain
                 ? parsed.OrderBy(r => r.Slug, StringComparer.OrdinalIgnoreCase).ToList()
                 : parsed.OrderByDescending(r => r.Date).ToList();
+
+            // Render the listing immediately; the status column backfills once the per-row fetches
+            // below complete, instead of leaving the whole page blank until every fetch resolves.
+            _loading = false;
+            StateHasChanged();
+
+            if (SupportsDrafts)
+            {
+                await LoadDraftStatusesAsync(generation);
+                if (generation == _loadGeneration)
+                {
+                    StateHasChanged();
+                }
+            }
         }
         catch (Exception ex)
         {
+            if (generation != _loadGeneration) return; // a newer navigation has already started
             _error = ex.Message;
-        }
-        finally
-        {
             _loading = false;
+        }
+    }
+
+    /// <summary>
+    /// The directory listing carries no front matter, so each entry is fetched to learn its status.
+    /// Concurrent, and a row that fails to load or parse is simply left out of the map — it renders as
+    /// unknown rather than failing the whole page.
+    /// </summary>
+    private async Task LoadDraftStatusesAsync(int generation)
+    {
+        if (_descriptor is null) return;
+
+        IEnumerable<Task<(string FileName, bool? Draft)>> fetches = _rows.Select(async row =>
+        {
+            try
+            {
+                RepoFile? file = await Api.GetFileAsync(row.Path);
+                if (file is null) return (row.FileName, (bool?)null);
+                (object front, _) = _descriptor.ParseDocument(file.Text);
+                // Cast explicitly: without it the two return statements infer different tuple types
+                // (bool? on the null path, bool here) and the lambda fails to compile.
+                return (row.FileName, (bool?)((front as IDraftable)?.Draft ?? false));
+            }
+            catch
+            {
+                return (row.FileName, (bool?)null);
+            }
+        });
+
+        (string FileName, bool? Draft)[] results = await Task.WhenAll(fetches);
+
+        if (generation != _loadGeneration) return; // a newer navigation has already started
+
+        foreach ((string fileName, bool? draft) in results)
+        {
+            if (draft.HasValue)
+            {
+                _draftByFile[fileName] = draft.Value;
+            }
         }
     }
 
@@ -223,6 +351,7 @@ else
             await Api.DeleteFileAsync(row.Path, row.Sha,
                 commitMessage: $"admin: delete {_descriptor.Slug} entry {row.Slug}");
             _rows.Remove(row);
+            _draftByFile.Remove(row.FileName);
             _pendingDelete = null;
         }
         catch (Exception ex)

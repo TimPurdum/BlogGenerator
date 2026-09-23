@@ -27,10 +27,18 @@ public static class Generator
         BlogSettings = serviceProvider.GetRequiredService<BlogSettings>();
         await using HtmlRenderer renderer = new(_serviceProvider, _loggerFactory);
 
-        List<PostMetaData> posts = MarkupParser.GeneratePostMetaDatas();
-        MusicEntries = MarkupParser.GenerateMusicMetaDatas();
-        ShowEntries = MarkupParser.GenerateShowMetaDatas();
-        GalleryEntries = MarkupParser.GenerateGalleryMetaDatas();
+        // One partition, applied before anything reads the list. navLinks, the render loops, the RSS
+        // feed and the sitemap all consume `posts`, so filtering here covers every surface at once.
+        List<PostMetaData> allPosts = MarkupParser.GeneratePostMetaDatas();
+        List<PostMetaData> posts = allPosts.Where(static p => !p.Draft).ToList();
+        // Kept unfiltered (not just the assigned Entries fields) so the draft warning below can tell
+        // which entries were excluded because they're drafts.
+        List<MusicMetaData> allMusic = MarkupParser.GenerateMusicMetaDatas();
+        List<ShowMetaData> allShows = MarkupParser.GenerateShowMetaDatas();
+        List<GalleryMetaData> allGalleries = MarkupParser.GenerateGalleryMetaDatas();
+        MusicEntries = allMusic.Where(static m => !m.Draft).ToList();
+        ShowEntries = allShows.Where(static s => !s.Draft).ToList();
+        GalleryEntries = allGalleries.Where(static g => !g.Draft).ToList();
 
         List<LinkData> navLinks = [];
         foreach (PostMetaData post in posts)
@@ -39,7 +47,8 @@ public static class Generator
                 post.PublishedDate, post.Author));
         }
 
-        List<PageMetaData> pages = await MarkupParser.GeneratePageMetaDatas(navLinks);
+        List<PageMetaData> allPages = await MarkupParser.GeneratePageMetaDatas(navLinks);
+        List<PageMetaData> pages = allPages.Where(static p => !p.Draft).ToList();
 
         Type rootTemplateType = Assembly.LoadFile(BlogSettings.SourceAssemblyOutputPath!).GetTypes()
                    .FirstOrDefault(t => t.IsSubclassOf(typeof(BaseRootTemplate)))
@@ -48,10 +57,7 @@ public static class Generator
         foreach (PageMetaData page in pages)
         {
             string html = await RenderPage(page, renderer, navLinks, rootTemplateType);
-            string fileName = Path.GetFileNameWithoutExtension(page.Url);
-            if (string.IsNullOrWhiteSpace(fileName) || fileName == Path.DirectorySeparatorChar.ToString())
-                fileName = "index";
-            string filePath = Path.Combine(BlogSettings.OutputWebRootPath, $"{fileName}.html");
+            string filePath = PageOutputPath(page);
             await File.WriteAllTextAsync(filePath, html);
 
             await CreateRazorComponents(page.RazorComponents);
@@ -61,6 +67,7 @@ public static class Generator
         {
             if (!post.Update) continue;
             string html = await RenderPost(post, renderer, navLinks, rootTemplateType);
+            Directory.CreateDirectory(Path.GetDirectoryName(post.OutputPath)!);
             await File.WriteAllTextAsync(post.OutputPath, html);
             await CreateRazorComponents(post.RazorComponents);
         }
@@ -69,6 +76,7 @@ public static class Generator
         {
             if (!music.Update) continue;
             string html = await RenderMusic(music, renderer, navLinks, rootTemplateType);
+            Directory.CreateDirectory(Path.GetDirectoryName(music.OutputPath)!);
             await File.WriteAllTextAsync(music.OutputPath, html);
             await CreateRazorComponents(music.RazorComponents);
         }
@@ -77,6 +85,7 @@ public static class Generator
         {
             if (!show.Update) continue;
             string html = await RenderShow(show, renderer, navLinks, rootTemplateType);
+            Directory.CreateDirectory(Path.GetDirectoryName(show.OutputPath)!);
             await File.WriteAllTextAsync(show.OutputPath, html);
             await CreateRazorComponents(show.RazorComponents);
         }
@@ -85,8 +94,82 @@ public static class Generator
         {
             if (!gallery.Update) continue;
             string html = await RenderGallery(gallery, renderer, navLinks, rootTemplateType);
+            Directory.CreateDirectory(Path.GetDirectoryName(gallery.OutputPath)!);
             await File.WriteAllTextAsync(gallery.OutputPath, html);
             await CreateRazorComponents(gallery.RazorComponents);
+        }
+
+        // Unpublishing has to DELETE generated output, not merely skip it — the .html files are
+        // committed to the consuming repo and served directly, so a skipped file stays live.
+        //
+        // This runs unconditionally, outside the `if (!entry.Update) continue` gates above. Update is
+        // computed from source mtime against output mtime, and a fresh CI checkout stamps every file
+        // with checkout time — deletion inside that gate would work locally and silently no-op in CI.
+        //
+        // A swept path is a draft's own output (an unpublish) or a path no live entry claims at all (an
+        // orphan left by a rename or a deleted source file). Distinguish them so the log names the real
+        // cause -- with parse failures now aborting the build (see MarkupParser.GeneratePostMetaData),
+        // this is the main diagnostic for anything unexpected disappearing.
+        HashSet<string> draftPostOutputPaths = new(
+            allPosts.Where(static p => p.Draft).Select(static p => Path.GetFullPath(p.OutputPath)),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (string removed in OutputSweeper.SweepOrphans(
+                     Path.Combine(BlogSettings.OutputWebRootPath, "post"),
+                     posts.Select(static p => p.OutputPath)))
+        {
+            string reason = draftPostOutputPaths.Contains(Path.GetFullPath(removed))
+                ? "unpublished"
+                : "orphaned (no matching entry -- renamed or source deleted)";
+            Console.WriteLine($"Removed {reason} output: {removed}");
+        }
+
+        // Pages share OutputWebRootPath with hand-maintained files such as 404.html, so they get a
+        // targeted delete by expected path rather than a sweep.
+        foreach (PageMetaData draftPage in allPages.Where(static p => p.Draft))
+        {
+            string draftPagePath = PageOutputPath(draftPage);
+            if (File.Exists(draftPagePath))
+            {
+                File.Delete(draftPagePath);
+                Console.WriteLine($"Removed unpublished page output: {draftPagePath}");
+            }
+        }
+
+        // Music, show, and gallery output roots are deliberately NOT swept -- unlike posts and pages,
+        // those content paths can be unconfigured, and pointing a delete sweep at a root nothing
+        // populates would treat everything under it as an orphan. So a draft of one of these types
+        // leaves its previously published output reachable at its old URL; this is documented (core
+        // ReadMe, "Drafts") as the consuming site's responsibility to clean up. Diagnostic only: warn,
+        // never delete.
+        foreach (MusicMetaData draftMusic in allMusic.Where(static m => m.Draft))
+        {
+            if (File.Exists(draftMusic.OutputPath))
+            {
+                Console.WriteLine(
+                    $"Warning: music entry '{draftMusic.Title}' is marked draft, but its previously " +
+                    $"published output still exists at '{draftMusic.OutputPath}'. It is not swept " +
+                    "automatically -- remove it by hand.");
+            }
+        }
+        foreach (ShowMetaData draftShow in allShows.Where(static s => s.Draft))
+        {
+            if (File.Exists(draftShow.OutputPath))
+            {
+                Console.WriteLine(
+                    $"Warning: show entry '{draftShow.Title}' is marked draft, but its previously " +
+                    $"published output still exists at '{draftShow.OutputPath}'. It is not swept " +
+                    "automatically -- remove it by hand.");
+            }
+        }
+        foreach (GalleryMetaData draftGallery in allGalleries.Where(static g => g.Draft))
+        {
+            if (File.Exists(draftGallery.OutputPath))
+            {
+                Console.WriteLine(
+                    $"Warning: gallery entry '{draftGallery.Title}' is marked draft, but its previously " +
+                    $"published output still exists at '{draftGallery.OutputPath}'. It is not swept " +
+                    "automatically -- remove it by hand.");
+            }
         }
 
         // RSS feed — posts merged with music + shows, sorted newest-first.
@@ -270,5 +353,16 @@ public static class Generator
 
             Console.WriteLine($"Created Razor component: {componentFilePath}");
         }
+    }
+
+    /// <summary>Maps a page's URL to its output filename. An empty or root URL is the site index.</summary>
+    private static string PageOutputPath(PageMetaData page)
+    {
+        string fileName = Path.GetFileNameWithoutExtension(page.Url);
+        if (string.IsNullOrWhiteSpace(fileName) || fileName == Path.DirectorySeparatorChar.ToString())
+        {
+            fileName = "index";
+        }
+        return Path.Combine(BlogSettings!.OutputWebRootPath, $"{fileName}.html");
     }
 }

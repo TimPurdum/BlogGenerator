@@ -69,7 +69,7 @@ root and boots **the public site's** Blazor app instead of the admin.
 
 **2. Deep links need a 404 bounce.** Static hosts serve their 404 page for any path that isn't a
 real file, so `/admin/edit/post/my-slug` never reaches `index.html`. `admin-interop.js` restores
-the URL on the way in; the consumer supplies the outbound half in the **site-level** 404 page
+the URL on the way in; the consumer supplies the outbound half in the site-level 404 page
 (`/404.html` on GitHub Pages — the host only ever serves the one at the root):
 
 ```html
@@ -134,16 +134,73 @@ What this means in practice:
   CSS inside a fenced code block is *not* applied — the document goes through the editor's own
   CommonMark parse, so a post documenting CSS is left alone.
 - **Pasting rich content still produces markdown.** Copy a formatted chunk from a web page or
-  document and the `text/html` flavour is converted on paste, so headings, links, emphasis and
+  document and the `text/html` flavor is converted on paste, so headings, links, emphasis and
   lists survive. Two cases pass straight through untouched: a paste carrying only plain text
   (including the browser's paste-as-plain-text), and text copied out of this editor.
 - **Tables are hand-edited.** There's no cell-by-cell table UI; the toolbar button inserts a
   markdown table skeleton.
 
+## Drafts
+
+Content whose front matter carries `draft: true` renders nowhere: no HTML file, no index or nav
+entry, no `feed.xml` item, no `sitemap.xml` entry. An absent `draft` key means published, so
+existing content needs no migration.
+
+New entries created in the admin start as drafts. The editor shows a Draft or Published badge and a
+Publish or Unpublish button beside Save.
+
+Publishing a `Dated` or `YearMonth` type re-dates the file to the day (or month) you publish — a
+draft's filename date is a scratch value, and this keeps a post that sat for three weeks from
+publishing buried mid-archive. That is a rename, so it is two commits. Pages and other `Plain`-named
+types keep their filename, because for them the filename is the URL.
+
+Unpublishing keeps the filename and removes the generated HTML on the next build. For posts the
+compiler sweeps the post output root, deleting any generated `.html` no published entry claims —
+which also cleans up after renames and deletions. Pages get a targeted delete by expected path
+instead, because page output shares a directory with hand-maintained files such as `404.html`. A
+custom content type whose output lives under its own root needs the equivalent sweep on the
+compiler side: drafting it stops new output but does not remove a file already published.
+
+### Opting a custom content type in
+
+```csharp
+public sealed record MusicFrontMatter : IHasLastmodified, IDraftable
+{
+    [YamlMember(Alias = "draft")] public bool? Draft { get; set; }
+    // ...
+}
+```
+
+`bool?`, not `bool`. The serializer omits nulls, so a published entry writes no `draft` key and its
+file stays byte-identical. A plain `bool` writes `draft: false` into every file the editor touches.
+
+A type that does not implement `IDraftable` behaves exactly as before and shows no publish controls.
+Note that this is not optional if the content's markdown already carries a `draft` key by hand:
+front-matter keys absent from the model are dropped on save, so an unmodeled `draft: true` would be
+erased and the entry published.
+
+### Upgrading from 1.4.x
+
+Two breaking changes, both in service of the same fix: the deploy banner now follows the *later*
+commit of a two-phase rename instead of the first.
+
+- `GitHubApiService.DeleteFileAsync` now returns `Task<RepoCommitResult>` instead of `Task`.
+  Callers that ignore the result are unaffected. Publishing or renaming a dated entry writes the
+  new path and then deletes the old one as two separate commits — GitHub's Contents API has no
+  atomic rename — and the delete commit is the one whose workflow run actually finishes, since it
+  supersedes and cancels the run the first commit kicked off. Before this change the banner
+  tracked the first commit and could report a deploy that GitHub itself had already superseded.
+- `IContentTypeDescriptor` gained a member, `CreateFrontMatterForNewEntry()`. This is a breaking
+  change for any consuming site that implements the interface directly rather than registering
+  content types through `AddContentType<TFront, TForm>`. It exists because the editor allocates
+  front matter on every load, including when opening an existing entry, so defaulting to draft in
+  the shared allocator would have briefly flagged published entries as drafts while their file
+  loads.
+
 ## Previewing with the live site's styles
 
 The preview pane pulls in the public site's own stylesheets, so a draft previews close to how
-it will actually publish — real typography, colours, link styling, code blocks and image rules
+it will actually publish — real typography, colors, link styling, code blocks and image rules
 rather than Toast UI's generic defaults.
 
 ```csharp
@@ -162,7 +219,7 @@ stylesheet into the admin safe:
 
 - **Every selector is confined to the preview pane.** Nothing can restyle the admin around it.
 - **`html` / `body` / `:root` rules are folded onto the preview container** rather than left to
-  match nothing. This is what carries the site's fonts, colours and custom properties across —
+  match nothing. This is what carries the site's fonts, colors and custom properties across —
   most of its look lives in those rules.
 - **Viewport declarations are dropped from those page-level rules** — `display`, `position`,
   `height`/`width` and their min/max forms, the flex properties, `overflow`. On a real page

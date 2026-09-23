@@ -56,14 +56,14 @@ public static class MarkupParser
                 {
                     fileLastModified = lastModified.Value;
                 }
-                
+                bool draft = frontMatter.GetBool("draft");
+
                 string outputFolder = Path.Combine(
                     Generator.BlogSettings!.OutputWebRootPath,
                     "post",
                     publishedDate.Year.ToString(),
                     publishedDate.Month.ToString(),
                     publishedDate.Day.ToString());
-                Directory.CreateDirectory(outputFolder);
                 string outFilePath = Path.Combine(outputFolder, $"{fileName}.html");
                 DateTime outFileLastModified = File.Exists(outFilePath)
                     ? File.GetLastWriteTimeUtc(outFilePath)
@@ -103,15 +103,19 @@ public static class MarkupParser
                     File.WriteAllText(post, newYamlBuilder.ToString());
                 }
 
-                return new PostMetaData(title, subTitle, urlPath, publishedDate, authorName, postContent, 
-                    razorComponentSections, scripts, layout, description, outFilePath, update);
+                return new PostMetaData(title, subTitle, urlPath, publishedDate, authorName, postContent,
+                    razorComponentSections, scripts, layout, description, outFilePath, update, draft);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error generating Razor content for post {fileName}: {ex.Message}");
+                // Do NOT return null here. This post's OutputPath would then be absent from the claim
+                // set Generator passes to OutputSweeper.SweepOrphans, and the sweeper would delete this
+                // post's still-committed, still-live HTML as an "orphan" -- on a green build. Aborting
+                // the whole build on one bad file is the safe failure mode; matches CheckSlugCollision's
+                // precedent of throwing with a message naming the offending file.
+                throw new InvalidOperationException(
+                    $"Failed to parse post '{fileName}' ({post}): {ex.Message}", ex);
             }
-
-            return null;
     }
 
     public static List<MusicMetaData> GenerateMusicMetaDatas()
@@ -166,7 +170,8 @@ public static class MarkupParser
                 description,
                 parsed.OutputPath,
                 parsed.Update,
-                extra));
+                extra,
+                Draft: parsed.Draft));
         }
         return result;
     }
@@ -219,7 +224,8 @@ public static class MarkupParser
                 description,
                 parsed.OutputPath,
                 parsed.Update,
-                extra));
+                extra,
+                Draft: parsed.Draft));
         }
         return result;
     }
@@ -278,7 +284,8 @@ public static class MarkupParser
                 parsed.OutputPath,
                 parsed.Update,
                 images,
-                extra));
+                extra,
+                Draft: parsed.Draft));
         }
         return result;
     }
@@ -293,11 +300,14 @@ public static class MarkupParser
         List<string> ScriptTags,
         string OutputPath,
         bool Update,
-        List<string> MarkdownLines);
+        List<string> MarkdownLines,
+        bool Draft);
 
     /// <summary>
     /// Reads, regex-matches, frontmatter-parses, lastmodified-merges, and markdown-renders an entry file.
-    /// On any parse error, logs and returns null (matches <see cref="GeneratePostMetaData"/> behavior).
+    /// On any parse error, logs and returns null. This diverges from <see cref="GeneratePostMetaData"/>,
+    /// which now throws <see cref="InvalidOperationException"/> so a malformed post aborts the build rather
+    /// than silently vanishing from the post list (and from the sweeper's claim set).
     /// Does not perform slug uniqueness — call <see cref="CheckSlugCollision"/> from the typed parser when needed.
     /// </summary>
     private static ParsedEntry? ParseEntryFile(
@@ -345,9 +355,9 @@ public static class MarkupParser
             {
                 fileLastModified = lastModified.Value;
             }
+            bool draft = frontMatter.GetBool("draft");
 
             string outputPath = outputPathResolver(slug, date);
-            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             DateTime outFileLastModified = File.Exists(outputPath)
                 ? File.GetLastWriteTimeUtc(outputPath)
                 : DateTime.MinValue;
@@ -360,7 +370,7 @@ public static class MarkupParser
             string content = ParseMarkdownLines(markdownLines, ref resultLines, ref razorComponents, ref scripts);
 
             return new ParsedEntry(slug, date, frontMatter, content, razorComponents, scripts,
-                outputPath, update, markdownLines);
+                outputPath, update, markdownLines, draft);
         }
         catch (Exception ex)
         {
@@ -453,6 +463,7 @@ public static class MarkupParser
         string layout = frontMatter.GetString("layout", "page");
         layout = $"{layout.ToUpperFirstChar()}Layout";
         string description = frontMatter.GetString("description");
+        bool draft = frontMatter.GetBool("draft");
 
         // Forward any non-standard frontmatter fields as ExtraFrontMatter so custom layouts can declare
         // typed [Parameter] props for arbitrary keys (e.g. heroImage on the home page).
@@ -472,12 +483,13 @@ public static class MarkupParser
         return new PageMetaData(title, subTitle, urlPath, postContent,
             razorComponentSections, scripts, layout, description, navOrder,
             extras.Count > 0 ? extras : null,
-            lastModified);
+            lastModified,
+            Draft: draft);
     }
 
     /// <summary>Keys that already flow through dedicated PageMetaData fields and shouldn't be re-emitted as extras.</summary>
     private static readonly HashSet<string> StandardPageFrontMatterKeys =
-        new(StringComparer.OrdinalIgnoreCase) { "title", "subtitle", "description", "layout", "navorder", "lastmodified" };
+        new(StringComparer.OrdinalIgnoreCase) { "title", "subtitle", "description", "layout", "navorder", "lastmodified", "draft" };
     
     private static string ParseMarkdownLines(List<string> markdownLines,
         ref List<string> resultLines,
