@@ -89,8 +89,15 @@ else
             {
                 <p class="form-row__hint" style="margin-top: 0.5rem;">
                     Saving will rename: <code class="path">@OriginalFileName</code> &rarr; <code class="path">@BuildNewFileName()</code>.
-                    There is no automatic redirect from the old URL. Output generated under the old name is
-                    removed on the next build.
+                    There is no automatic redirect from the old URL.
+                    @if (RenamedOutputIsSwept)
+                    {
+                        <text>Output generated under the old name is removed on the next build.</text>
+                    }
+                    else
+                    {
+                        <text>Output generated under the old name may remain live; delete it by hand if it does.</text>
+                    }
                 </p>
             }
         </fieldset>
@@ -174,6 +181,13 @@ else
             return !string.Equals(BuildNewFileName(), OriginalFileName, StringComparison.OrdinalIgnoreCase);
         }
     }
+
+    /// <summary>True when the compiler sweeps this content type's output root, so a renamed or deleted
+    /// entry has its stale HTML removed on the next build. Only the built-in posts descriptor writes into
+    /// the post root the compiler sweeps; pages get a targeted draft-only delete, and custom content types
+    /// must sweep their own root.</summary>
+    private bool RenamedOutputIsSwept =>
+        string.Equals(_descriptor?.UrlStem, "post", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>True when this content type opted into drafts by implementing IDraftable.</summary>
     private bool SupportsDrafts => _frontmatter is IDraftable;
@@ -378,6 +392,13 @@ else
     {
         if (_frontmatter is not IDraftable draftable || _descriptor is null) return;
 
+        // Snapshot what this method is about to change. SaveAsync reports failure rather than throwing,
+        // so without a restore a failed publish would leave the editor showing Published while the
+        // server still holds the draft — and the next plain Save would publish it silently.
+        bool? priorDraft = draftable.Draft;
+        string priorDateFull = _dateFull;
+        string priorDateMonth = _dateMonth;
+
         // Null, not false: the serializer omits null, so a published entry carries no draft key.
         draftable.Draft = null;
 
@@ -395,22 +416,33 @@ else
                 break;
         }
 
-        await SaveAsync(SaveIntent.Publish);
+        if (!await SaveAsync(SaveIntent.Publish))
+        {
+            draftable.Draft = priorDraft;
+            _dateFull = priorDateFull;
+            _dateMonth = priorDateMonth;
+        }
     }
 
     private async Task UnpublishAsync()
     {
         if (_frontmatter is not IDraftable draftable) return;
         // Leave the filename alone. A later re-publish picks up that day's date.
+        bool? priorDraft = draftable.Draft;
         draftable.Draft = true;
-        await SaveAsync(SaveIntent.Unpublish);
+        if (!await SaveAsync(SaveIntent.Unpublish))
+        {
+            draftable.Draft = priorDraft;
+        }
     }
 
     private Task SaveAsync() => SaveAsync(SaveIntent.Save);
 
-    private async Task SaveAsync(SaveIntent intent)
+    /// <summary>Runs the write. Returns true when the server accepted it; on failure it records the
+    /// error and returns false so callers can restore what they optimistically changed.</summary>
+    private async Task<bool> SaveAsync(SaveIntent intent)
     {
-        if (_descriptor is null) return;
+        if (_descriptor is null) return false;
         _saving = true;
         _saveError = null;
         try
@@ -476,10 +508,12 @@ else
             }
 
             Nav.NavigateTo($"/admin/{_descriptor.Slug}");
+            return true;
         }
         catch (Exception ex)
         {
             _saveError = ex.Message;
+            return false;
         }
         finally
         {
