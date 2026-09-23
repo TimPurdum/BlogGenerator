@@ -36,7 +36,7 @@ public sealed class OutputSweeperTests
         IReadOnlyList<string> deleted = OutputSweeper.SweepOrphans(_root, []);
 
         Assert.IsFalse(File.Exists(orphan));
-        Assert.AreEqual(1, deleted.Count);
+        Assert.HasCount(1, deleted);
     }
 
     [TestMethod]
@@ -47,7 +47,7 @@ public sealed class OutputSweeperTests
         IReadOnlyList<string> deleted = OutputSweeper.SweepOrphans(_root, [kept]);
 
         Assert.IsTrue(File.Exists(kept));
-        Assert.AreEqual(0, deleted.Count);
+        Assert.IsEmpty(deleted);
     }
 
     [TestMethod]
@@ -81,7 +81,7 @@ public sealed class OutputSweeperTests
 
         Assert.IsTrue(File.Exists(kept));
         Assert.IsFalse(File.Exists(orphan));
-        Assert.AreEqual(1, deleted.Count);
+        Assert.HasCount(1, deleted);
         Assert.IsTrue(
             Directory.Exists(Path.Combine(_root, "2026", "8", "15")),
             "A directory still holding a claimed file must not be pruned.");
@@ -115,6 +115,6 @@ public sealed class OutputSweeperTests
         IReadOnlyList<string> deleted =
             OutputSweeper.SweepOrphans(Path.Combine(_root, "no-such-dir"), []);
 
-        Assert.AreEqual(0, deleted.Count);
+        Assert.IsEmpty(deleted);
     }
 }

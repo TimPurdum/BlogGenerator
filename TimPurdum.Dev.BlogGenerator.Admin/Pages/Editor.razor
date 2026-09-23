@@ -485,7 +485,9 @@ else
                 // then delete the old path using its existing sha. Each step is its own commit — GitHub's
                 // Contents API has no atomic rename. If the DELETE fails after the PUT succeeds, content
                 // sits at both paths and the user will see the rename only partially applied. We surface
-                // the error; the user can re-Save to retry the delete.
+                // the error, but a plain re-Save cannot clear the stale path: it re-issues the PUT (still
+                // with no sha) against the path that now exists, so GitHub rejects it with 422 before the
+                // DELETE is reached.
                 string oldPath = $"{_descriptor.ContentPath}/{OriginalFileName}";
                 string slugForCommit = StripExtension(newFileName);
                 string putVerb = intent == SaveIntent.Publish ? "publish" : "rename";

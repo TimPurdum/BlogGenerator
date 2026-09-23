@@ -7,7 +7,7 @@ namespace TimPurdum.Dev.BlogGenerator.Tests;
 /// Exercises the real parser against real files. <c>MarkupParser</c> reads its paths from the static
 /// <c>Generator.BlogSettings</c>, so each test points that at a throwaway directory.
 /// </summary>
-/// <summary>
+/// <remarks>
 /// Not parallelized: every test here points the static <c>Generator.BlogSettings</c> at its own
 /// temp directory, and the assembly runs tests at method-level parallelism (see MSTestSettings.cs).
 /// <see cref="DoNotParallelizeAttribute"/> only serializes this class's own methods against each
@@ -15,7 +15,7 @@ namespace TimPurdum.Dev.BlogGenerator.Tests;
 /// That's fine today because no other class reads or writes <c>Generator.BlogSettings</c> (or the
 /// <c>Generator.MusicEntries</c>/<c>ShowEntries</c>/<c>GalleryEntries</c> statics); if a future test
 /// class does, it needs this same attribute or the race comes back.
-/// </summary>
+/// </remarks>
 [TestClass]
 [DoNotParallelize]
 public sealed class DraftPartitionTests
@@ -63,7 +63,7 @@ public sealed class DraftPartitionTests
 
         List<PostMetaData> posts = MarkupParser.GeneratePostMetaDatas();
 
-        Assert.AreEqual(1, posts.Count);
+        Assert.HasCount(1, posts);
         Assert.IsTrue(posts[0].Draft);
     }
 
@@ -74,7 +74,7 @@ public sealed class DraftPartitionTests
 
         List<PostMetaData> posts = MarkupParser.GeneratePostMetaDatas();
 
-        Assert.AreEqual(1, posts.Count);
+        Assert.HasCount(1, posts);
         Assert.IsFalse(posts[0].Draft, "An absent draft key must mean published — every existing post relies on this.");
     }
 

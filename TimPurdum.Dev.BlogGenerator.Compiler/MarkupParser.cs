@@ -305,7 +305,9 @@ public static class MarkupParser
 
     /// <summary>
     /// Reads, regex-matches, frontmatter-parses, lastmodified-merges, and markdown-renders an entry file.
-    /// On any parse error, logs and returns null (matches <see cref="GeneratePostMetaData"/> behavior).
+    /// On any parse error, logs and returns null. This diverges from <see cref="GeneratePostMetaData"/>,
+    /// which now throws <see cref="InvalidOperationException"/> so a malformed post aborts the build rather
+    /// than silently vanishing from the post list (and from the sweeper's claim set).
     /// Does not perform slug uniqueness — call <see cref="CheckSlugCollision"/> from the typed parser when needed.
     /// </summary>
     private static ParsedEntry? ParseEntryFile(

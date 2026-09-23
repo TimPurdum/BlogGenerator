@@ -69,7 +69,7 @@ root and boots **the public site's** Blazor app instead of the admin.
 
 **2. Deep links need a 404 bounce.** Static hosts serve their 404 page for any path that isn't a
 real file, so `/admin/edit/post/my-slug` never reaches `index.html`. `admin-interop.js` restores
-the URL on the way in; the consumer supplies the outbound half in the **site-level** 404 page
+the URL on the way in; the consumer supplies the outbound half in the site-level 404 page
 (`/404.html` on GitHub Pages — the host only ever serves the one at the root):
 
 ```html
