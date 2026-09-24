@@ -108,16 +108,16 @@ public static class AddBlogAdminExtensions
 
     private static IContentTypeDescriptor ToDescriptor<TFront>(DefaultContentTypeConfig<TFront> cfg)
         where TFront : class, new() => new ContentTypeDescriptor<TFront>
-    {
-        Slug = cfg.Slug,
-        DisplayName = cfg.DisplayName,
-        SingularNoun = cfg.SingularNoun,
-        DashboardHint = cfg.DashboardHint,
-        ContentPath = cfg.ContentPath,
-        NamePattern = cfg.NamePattern,
-        Order = cfg.Order,
-        EditorFormType = cfg.EditorFormType,
-        UrlStemOverride = cfg.UrlStem,
-        BuildLiveUrl = cfg.BuildLiveUrl
-    };
+        {
+            Slug = cfg.Slug,
+            DisplayName = cfg.DisplayName,
+            SingularNoun = cfg.SingularNoun,
+            DashboardHint = cfg.DashboardHint,
+            ContentPath = cfg.ContentPath,
+            NamePattern = cfg.NamePattern,
+            Order = cfg.Order,
+            EditorFormType = cfg.EditorFormType,
+            UrlStemOverride = cfg.UrlStem,
+            BuildLiveUrl = cfg.BuildLiveUrl
+        };
 }
