@@ -197,6 +197,27 @@ commit of a two-phase rename instead of the first.
   the shared allocator would have briefly flagged published entries as drafts while their file
   loads.
 
+## Recovering unsaved edits
+
+The editor keeps a rolling copy of your work in the browser's `localStorage`, so leaving without
+clicking Save — a stray back button, a closed tab, an accidental Cancel — doesn't lose it. Come
+back to the same entry and the copy is restored, with a notice saying when it was stored. If you'd
+rather have what's on GitHub, the notice carries a button to discard the recovered edits and
+reload the saved version.
+
+Details worth knowing:
+
+- The copy is written every few seconds **only when the form differs from what was loaded**. A
+  visit that changes nothing leaves no copy, and returning never nags with a restore notice.
+- A copy is cleared the moment a save commits. If it survives, the file on GitHub changed after
+  the copy was made — saved from another browser or device — and the restore notice says so.
+- It is one copy per entry, per browser. It is a crash net, not a draft history, and it never
+  reaches GitHub on its own.
+- The Date and Slug fields are part of the copy, so a rename in progress survives too.
+- The copy lives under a key starting with `opts.DraftStorageKeyPrefix` (default
+  `blog.admin.draft`, then `.{content type}.{file name}`). Set it per site, like
+  `PatStorageKey`, if more than one site's admin runs in the same browser.
+
 ## Previewing with the live site's styles
 
 The preview pane pulls in the public site's own stylesheets, so a draft previews close to how

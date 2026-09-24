@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TimPurdum.Dev.BlogGenerator.Compiler\TimPurdum.Dev.BlogGenerator.Compiler.csproj" />
+    <ProjectReference Include="..\TimPurdum.Dev.BlogGenerator.Admin\TimPurdum.Dev.BlogGenerator.Admin.csproj" />
   </ItemGroup>
 
 </Project>

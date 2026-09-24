@@ -6,6 +6,9 @@
 @inject NavigationManager Nav
 @inject DeployStatusService Deploy
 @inject ContentTypeRegistry Registry
+@inject EditorBackupService Backup
+@inject BlogAdminOptions Options
+@implements IDisposable
 
 <PageTitle>@PageTitleText — admin</PageTitle>
 
@@ -34,6 +37,25 @@
         </p>
     }
 </header>
+
+@if (_restoredBackupAt is not null)
+{
+    <div class="alert alert--notice" role="status">
+        <p>
+            <strong>Recovered unsaved edits from local storage</strong> — stored at @FormatStoredAt(_restoredBackupAt.Value),
+            because you left without saving. They are not on GitHub; click Save when you're ready.
+            @if (_restoredAgainstNewerSaved)
+            {
+                <text>Heads up: the saved version on GitHub changed after this copy was made.</text>
+            }
+        </p>
+        <p>
+            <button type="button" class="admin-button admin-button--ghost" @onclick="DiscardRestoredBackupAsync">
+                Discard recovered edits and reload the saved version
+            </button>
+        </p>
+    </div>
+}
 
 @if (_descriptor is null)
 {
@@ -123,6 +145,20 @@ else
         }
 
         <div class="editor-actions">
+            <p class="editor-autostore" role="status">
+                @if (_autoStoreError is not null)
+                {
+                    <text>Auto-store isn't working: @_autoStoreError. Until you click Save, edits exist only in this page.</text>
+                }
+                else if (_lastAutoStoredAt is not null)
+                {
+                    <text>Auto-stored in local storage at @FormatStoredAt(_lastAutoStoredAt.Value) — recovered if you leave without saving.</text>
+                }
+                else
+                {
+                    <text>Edits auto-store in this browser's local storage and are recovered if you leave without saving.</text>
+                }
+            </p>
             <button class="admin-button" type="submit" disabled="@_saving">@(_saving ? "Saving…" : "Save")</button>
             @if (SupportsDrafts)
             {
@@ -162,6 +198,38 @@ else
     private string _dateFull = DateTime.Today.ToString("yyyy-MM-dd");   // YYYY-MM-DD for posts/music/shows
     private string _dateMonth = DateTime.Today.ToString("yyyy-MM");      // YYYY-MM for gallery
     private string _slug = "";
+
+    // --- Local-storage auto-backup ------------------------------------------------------
+    // The editor keeps a rolling copy in localStorage so leaving without clicking Save doesn't lose
+    // work. The backup is keyed per content file, written on a short poll while the state is dirty,
+    // restored on return, and cleared on a successful save.
+
+    /// <summary>State as loaded from the server (or from a restore), the baseline for the dirty check.</summary>
+    private string _pristineSnapshot = "";
+
+    /// <summary>When a backup was restored on this page load. Non-null drives the recovery notice.</summary>
+    private DateTime? _restoredBackupAt;
+
+    /// <summary>True when the saved file changed after the recovered copy was made — i.e. something
+    /// saved it from elsewhere (a save in this browser clears its own backup).</summary>
+    private bool _restoredAgainstNewerSaved;
+
+    /// <summary>When the loop last wrote a backup, for the auto-store status line. Null until then.</summary>
+    private DateTime? _lastAutoStoredAt;
+
+    /// <summary>Set when localStorage is unavailable (quota, disabled) so the status line can say so.</summary>
+    private string? _autoStoreError;
+
+    private CancellationTokenSource? _backupLoopCts;
+
+    /// <summary>Set in <see cref="Dispose"/> so a store in flight during teardown doesn't re-render
+    /// a disposed component.</summary>
+    private bool _disposed;
+
+    /// <summary>localStorage key for this entry's backup. One per content file; /new entries of the same
+    /// content type share a single key, since they have no filename to distinguish them yet.</summary>
+    private string BackupKey =>
+        $"{Options.DraftStorageKeyPrefix}.{_descriptor?.Slug}.{(File is null ? "__new__" : Uri.UnescapeDataString(File))}";
 
     /// <summary>True when the slug shouldn't be editable. Currently used to lock the home page slug
     /// (<c>index</c>), whose URL is hardcoded into the site's routing.</summary>
@@ -229,6 +297,13 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        // Kill the previous entry's auto-store loop BEFORE anything else — before the state reset,
+        // before the awaited load, and even before this method can early-return. While the load
+        // below is awaited, a still-alive loop would compare the reset/default state against the
+        // previous entry's baseline, judge it dirty, and write it under the NEW BackupKey —
+        // destroying the recovery copy this entry is about to restore from. (fp:1ef3c516e69d)
+        _backupLoopCts?.Cancel();
+
         _descriptor = TypeSlug is null ? null : Registry.FindBySlug(TypeSlug);
         if (_descriptor is null)
         {
@@ -245,39 +320,237 @@ else
         _slug = "";
         _dateFull = DateTime.Today.ToString("yyyy-MM-dd");
         _dateMonth = DateTime.Today.ToString("yyyy-MM");
+        _restoredBackupAt = null;
+        _restoredAgainstNewerSaved = false;
+        // Per-entry status, not per-component: a reused component must not carry the previous
+        // entry's stored-at timestamp or its storage error into this one. (fp:1b58b228ceab)
+        _lastAutoStoredAt = null;
+        _autoStoreError = null;
 
         if (string.IsNullOrEmpty(File))
         {
             _frontmatter = _descriptor.CreateFrontMatterForNewEntry();
+            _error = null;
             _loading = false;
-            return;
+        }
+        else
+        {
+            _loading = true;
+            _error = null;
+            try
+            {
+                string decoded = Uri.UnescapeDataString(File);
+                string path = $"{_descriptor.ContentPath}/{decoded}";
+                RepoFile? repoFile = await Api.GetFileAsync(path);
+                if (repoFile is null)
+                {
+                    _error = $"File '{decoded}' not found in {_descriptor.ContentPath}.";
+                    return;
+                }
+                _existingSha = repoFile.Sha;
+                (_frontmatter, _body) = _descriptor.ParseDocument(repoFile.Text);
+                PrefillFilenameInputs(decoded);
+            }
+            catch (Exception ex)
+            {
+                _error = ex.Message;
+            }
+            finally
+            {
+                _loading = false;
+            }
         }
 
-        _loading = true;
-        _error = null;
+        StartBackupLoop();
+        if (_error is null)
+        {
+            // Baseline for the dirty check, captured before any restore so identical copies get dropped.
+            _pristineSnapshot = CurrentSnapshot();
+            await TryRestoreBackupAsync();
+        }
+    }
+
+    // --- Local-storage auto-backup --------------------------------------------------------
+
+    /// <summary>Captures the editor's whole state for comparison — front-matter serialized through the
+    /// same YAML serializer the save path uses, plus body and the File fieldset. Two snapshots equal
+    /// means Save would commit nothing the user hasn't already got.</summary>
+    private static string SnapshotState(object frontmatter, string body, string slug, string dateFull, string dateMonth) =>
+        string.Join('\n',
+            FrontMatterForComparison(frontmatter),
+            body.TrimEnd(),
+            slug.Trim(),
+            dateFull,
+            dateMonth);
+
+    private string CurrentSnapshot() => SnapshotState(_frontmatter, _body, _slug, _dateFull, _dateMonth);
+
+    /// <summary>Serialize front-matter with <c>lastmodified</c> blanked out. That field is stamped at
+    /// auto-store and save time — without this, the dirty check would fire on every poll.</summary>
+    private static string FrontMatterForComparison(object frontmatter)
+    {
+        if (frontmatter is not IHasLastmodified stamped)
+        {
+            return MarkdownDocument.SerializeFrontMatter(frontmatter);
+        }
+        string? saved = stamped.Lastmodified;
+        stamped.Lastmodified = null;
         try
         {
-            string decoded = Uri.UnescapeDataString(File);
-            string path = $"{_descriptor.ContentPath}/{decoded}";
-            RepoFile? repoFile = await Api.GetFileAsync(path);
-            if (repoFile is null)
-            {
-                _error = $"File '{decoded}' not found in {_descriptor.ContentPath}.";
-                return;
-            }
-            _existingSha = repoFile.Sha;
-            (_frontmatter, _body) = _descriptor.ParseDocument(repoFile.Text);
-            PrefillFilenameInputs(decoded);
-        }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
+            return MarkdownDocument.SerializeFrontMatter(frontmatter);
         }
         finally
         {
-            _loading = false;
+            stamped.Lastmodified = saved;
         }
     }
+
+    /// <summary>Restart the poll that mirrors the editor into localStorage. The front-matter form binds
+    /// directly to the front-matter object, so there is no single "changed" event to hook — polling is
+    /// the one mechanism that sees every field, including ones this page never hears about.</summary>
+    private void StartBackupLoop()
+    {
+        _backupLoopCts?.Cancel();
+        _backupLoopCts = new CancellationTokenSource();
+        _ = AutoStoreLoopAsync(_backupLoopCts.Token);
+    }
+
+    private async Task AutoStoreLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                // Only write when the state actually moved off the baseline — a visit that changes
+                // nothing must not leave a copy that nags with a restore notice on return.
+                if (_error is not null || _saving || CurrentSnapshot() == _pristineSnapshot) continue;
+                await StoreBackupAsync(ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Page left or parameters changed — the next loop owns the state now.
+        }
+        catch (Exception ex)
+        {
+            // Something outside StoreBackupAsync's own handling threw — the snapshot comparison
+            // itself, or anything like it. The loop is dead, so say so on the status line rather
+            // than letting auto-store die invisibly while the hint still claims it works.
+            // (fp:ccd67a733462)
+            _autoStoreError = ex.Message;
+            if (!_disposed)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private async Task StoreBackupAsync(CancellationToken ct)
+    {
+        if (_descriptor is null) return;
+        try
+        {
+            // BuildDocument also stamps lastmodified into the copy — harmless, since Save stamps it
+            // again and the dirty check ignores the field.
+            string markdown = _descriptor.BuildDocument(_frontmatter, _body);
+            await Backup.SaveAsync(BackupKey,
+                new EditorBackup(_existingSha, markdown, _slug, _dateFull, _dateMonth, DateTime.Now), ct);
+            _lastAutoStoredAt = DateTime.Now;
+            _autoStoreError = null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) // quota exceeded, storage disabled, serialization failure
+        {
+            _autoStoreError = ex.Message;
+        }
+        // The loop can be mid-store when the page tears down; re-rendering a disposed component
+        // would throw, and there is no longer any UI to refresh anyway.
+        if (!_disposed)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>Bring back the localStorage copy, if any, on page load. A copy identical to what's
+    /// already loaded — the user visited, changed nothing, left — is not a recovery; it's dropped
+    /// so returning doesn't nag with a restore notice. Storage failures are tolerated here the
+    /// same way StoreBackupAsync tolerates them: no backup, not a broken page. (fp:d3854c4e1d55)</summary>
+    private async Task TryRestoreBackupAsync()
+    {
+        if (_descriptor is null) return;
+        EditorBackup? backup;
+        try
+        {
+            backup = await Backup.LoadAsync(BackupKey);
+        }
+        catch (Exception ex) // JS interop failure — localStorage unavailable or blocked
+        {
+            _autoStoreError = ex.Message;
+            return;
+        }
+        if (backup is null || string.IsNullOrEmpty(backup.Markdown)) return;
+
+        object frontmatter;
+        string body;
+        try
+        {
+            (frontmatter, body) = _descriptor.ParseDocument(backup.Markdown);
+        }
+        catch
+        {
+            // Corrupt or unreadable copy — drop it rather than block the editor.
+            await ClearBackupAsync();
+            return;
+        }
+
+        if (SnapshotState(frontmatter, body, backup.Slug, backup.DateFull, backup.DateMonth) == _pristineSnapshot)
+        {
+            await ClearBackupAsync();
+            return;
+        }
+
+        _frontmatter = frontmatter;
+        _body = body;
+        _slug = backup.Slug;
+        _dateFull = backup.DateFull;
+        _dateMonth = backup.DateMonth;
+        _restoredBackupAt = backup.SavedAt;
+        _restoredAgainstNewerSaved = !string.IsNullOrEmpty(File)
+            && !string.IsNullOrEmpty(backup.FileSha)
+            && !string.Equals(backup.FileSha, _existingSha, StringComparison.Ordinal);
+        // The restored state is the new baseline: it must not immediately read as dirty and get
+        // re-copied while the user has still changed nothing.
+        _pristineSnapshot = CurrentSnapshot();
+    }
+
+    /// <summary>Best-effort clear of the stored copy. Storage failures are surfaced on the status
+    /// line instead of thrown — a copy we cannot delete must never fault a load, a save, or a
+    /// discard. (fp:da380197fea4)</summary>
+    private async Task ClearBackupAsync()
+    {
+        try
+        {
+            await Backup.ClearAsync(BackupKey);
+        }
+        catch (Exception ex)
+        {
+            _autoStoreError = ex.Message;
+        }
+    }
+
+    /// <summary>Throw away the recovered copy and reload what's saved on GitHub. Runs the ordinary load
+    /// path again — by now the backup is cleared, so it lands on pristine state.</summary>
+    private async Task DiscardRestoredBackupAsync()
+    {
+        await ClearBackupAsync();
+        await OnParametersSetAsync();
+    }
+
+    private static string FormatStoredAt(DateTime at) => at.ToString("MMM d, h:mm tt");
 
     /// <summary>Populate the File fieldset (date + slug) from the existing filename so the user can edit
     /// either piece to rename. Mirrors the format BuildNewFileName produces.</summary>
@@ -526,6 +799,11 @@ else
                 Deploy.Track(result.CommitSha, viewLive);
             }
 
+            // Saved — the local backup no longer applies to anything. Best-effort by design: a
+            // storage failure here must not invert the outcome of a save that already committed.
+            // (fp:da380197fea4)
+            await ClearBackupAsync();
+
             Nav.NavigateTo($"/admin/{_descriptor.Slug}");
             return SaveOutcome.Succeeded;
         }
@@ -647,5 +925,13 @@ else
                 ? "Publish"
                 : $"Publish as {StripExtension(publishFileName)}";
         }
+    }
+
+    /// <summary>Stops the auto-store poll when the page is left. Cancelling is enough: the loop's only
+    /// cleanup is its own exit, and an in-flight localStorage write either lands or doesn't.</summary>
+    public void Dispose()
+    {
+        _disposed = true;
+        _backupLoopCts?.Cancel();
     }
 }
