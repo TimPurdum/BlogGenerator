@@ -35,6 +35,7 @@ public static class AddBlogAdminExtensions
         services.AddSingleton<GitHubApiService>();
         services.AddSingleton<DeployStatusService>();
         services.AddSingleton<ImageUploadService>();
+        services.AddSingleton<EditorBackupService>();
 
         return services;
     }
@@ -54,6 +55,11 @@ public static class AddBlogAdminExtensions
         if (string.IsNullOrWhiteSpace(options.PatStorageKey))
         {
             throw new ArgumentException("BlogAdminOptions.PatStorageKey is required.", nameof(options));
+        }
+
+        if (string.IsNullOrWhiteSpace(options.DraftStorageKeyPrefix))
+        {
+            throw new ArgumentException("BlogAdminOptions.DraftStorageKeyPrefix is required.", nameof(options));
         }
     }
 

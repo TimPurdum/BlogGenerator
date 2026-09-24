@@ -49,6 +49,13 @@ public static class MarkdownDocument
         return (front, body);
     }
 
+    /// <summary>
+    /// Serialize just the front-matter object to YAML (no <c>---</c> fences). Non-generic, for callers
+    /// that hold a typed front-matter as <see cref="object"/> — e.g. comparing an editor session's
+    /// state against a saved copy without knowing the content type.
+    /// </summary>
+    public static string SerializeFrontMatter(object frontmatter) => Serializer.Serialize(frontmatter);
+
     /// <summary>Serialize the frontmatter + body back into the on-disk markdown form.</summary>
     public static string Build<TFront>(TFront frontmatter, string body)
     {

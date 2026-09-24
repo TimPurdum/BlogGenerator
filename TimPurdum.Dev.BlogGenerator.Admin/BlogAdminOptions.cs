@@ -18,6 +18,11 @@ public sealed class BlogAdminOptions
     /// to avoid collisions when multiple admins are open in the same browser.</summary>
     public string PatStorageKey { get; set; } = "blog.admin.pat";
 
+    /// <summary>localStorage key prefix for per-entry editor backups — keys are formed as
+    /// <c>{prefix}.{contentTypeSlug}.{fileName}</c>. Should be unique per site, like
+    /// <see cref="PatStorageKey"/>.</summary>
+    public string DraftStorageKeyPrefix { get; set; } = "blog.admin.draft";
+
     /// <summary>Brand name shown in the admin header and the document title suffix.</summary>
     public string SiteName { get; set; } = "Admin";
 

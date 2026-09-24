@@ -345,6 +345,10 @@ a:hover { color: var(--admin-accent); }
     color: var(--admin-error);
 }
 .alert--error strong { color: var(--admin-error); }
+.alert--notice {
+    border-color: var(--admin-accent);
+    background: var(--admin-accent-veil);
+}
 .alert button { margin-top: 0.75rem; }
 
 .empty {
@@ -956,6 +960,14 @@ a:hover { color: var(--admin-accent); }
     justify-content: flex-end;
     align-items: center;
 }
+/* Status line for the local-storage auto-backup. Sits at the flex-start end of .editor-actions,
+   pushed there by the right-aligned buttons. */
+.editor-autostore {
+    margin-right: auto;
+    font-size: 0.8125rem;
+    color: var(--admin-muted);
+}
+.editor-autostore + .admin-button { margin-left: 0.5rem; }
 @media (max-width: 720px) {
     .editor-actions { flex-direction: column-reverse; align-items: stretch; }
     .editor-actions .admin-button { width: 100%; }
