@@ -297,6 +297,13 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        // Kill the previous entry's auto-store loop BEFORE anything else — before the state reset,
+        // before the awaited load, and even before this method can early-return. While the load
+        // below is awaited, a still-alive loop would compare the reset/default state against the
+        // previous entry's baseline, judge it dirty, and write it under the NEW BackupKey —
+        // destroying the recovery copy this entry is about to restore from. (fp:1ef3c516e69d)
+        _backupLoopCts?.Cancel();
+
         _descriptor = TypeSlug is null ? null : Registry.FindBySlug(TypeSlug);
         if (_descriptor is null)
         {
@@ -315,6 +322,10 @@ else
         _dateMonth = DateTime.Today.ToString("yyyy-MM");
         _restoredBackupAt = null;
         _restoredAgainstNewerSaved = false;
+        // Per-entry status, not per-component: a reused component must not carry the previous
+        // entry's stored-at timestamp or its storage error into this one. (fp:1b58b228ceab)
+        _lastAutoStoredAt = null;
+        _autoStoreError = null;
 
         if (string.IsNullOrEmpty(File))
         {
@@ -421,6 +432,18 @@ else
         {
             // Page left or parameters changed — the next loop owns the state now.
         }
+        catch (Exception ex)
+        {
+            // Something outside StoreBackupAsync's own handling threw — the snapshot comparison
+            // itself, or anything like it. The loop is dead, so say so on the status line rather
+            // than letting auto-store die invisibly while the hint still claims it works.
+            // (fp:ccd67a733462)
+            _autoStoreError = ex.Message;
+            if (!_disposed)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
     }
 
     private async Task StoreBackupAsync(CancellationToken ct)
@@ -454,11 +477,21 @@ else
 
     /// <summary>Bring back the localStorage copy, if any, on page load. A copy identical to what's
     /// already loaded — the user visited, changed nothing, left — is not a recovery; it's dropped
-    /// so returning doesn't nag with a restore notice.</summary>
+    /// so returning doesn't nag with a restore notice. Storage failures are tolerated here the
+    /// same way StoreBackupAsync tolerates them: no backup, not a broken page. (fp:d3854c4e1d55)</summary>
     private async Task TryRestoreBackupAsync()
     {
         if (_descriptor is null) return;
-        EditorBackup? backup = await Backup.LoadAsync(BackupKey);
+        EditorBackup? backup;
+        try
+        {
+            backup = await Backup.LoadAsync(BackupKey);
+        }
+        catch (Exception ex) // JS interop failure — localStorage unavailable or blocked
+        {
+            _autoStoreError = ex.Message;
+            return;
+        }
         if (backup is null || string.IsNullOrEmpty(backup.Markdown)) return;
 
         object frontmatter;
@@ -470,13 +503,13 @@ else
         catch
         {
             // Corrupt or unreadable copy — drop it rather than block the editor.
-            await Backup.ClearAsync(BackupKey);
+            await ClearBackupAsync();
             return;
         }
 
         if (SnapshotState(frontmatter, body, backup.Slug, backup.DateFull, backup.DateMonth) == _pristineSnapshot)
         {
-            await Backup.ClearAsync(BackupKey);
+            await ClearBackupAsync();
             return;
         }
 
@@ -494,13 +527,26 @@ else
         _pristineSnapshot = CurrentSnapshot();
     }
 
+    /// <summary>Best-effort clear of the stored copy. Storage failures are surfaced on the status
+    /// line instead of thrown — a copy we cannot delete must never fault a load, a save, or a
+    /// discard. (fp:da380197fea4)</summary>
+    private async Task ClearBackupAsync()
+    {
+        try
+        {
+            await Backup.ClearAsync(BackupKey);
+        }
+        catch (Exception ex)
+        {
+            _autoStoreError = ex.Message;
+        }
+    }
+
     /// <summary>Throw away the recovered copy and reload what's saved on GitHub. Runs the ordinary load
     /// path again — by now the backup is cleared, so it lands on pristine state.</summary>
     private async Task DiscardRestoredBackupAsync()
     {
-        await Backup.ClearAsync(BackupKey);
-        _lastAutoStoredAt = null;
-        _autoStoreError = null;
+        await ClearBackupAsync();
         await OnParametersSetAsync();
     }
 
@@ -753,8 +799,10 @@ else
                 Deploy.Track(result.CommitSha, viewLive);
             }
 
-            // Saved — the local backup no longer applies to anything.
-            await Backup.ClearAsync(BackupKey);
+            // Saved — the local backup no longer applies to anything. Best-effort by design: a
+            // storage failure here must not invert the outcome of a save that already committed.
+            // (fp:da380197fea4)
+            await ClearBackupAsync();
 
             Nav.NavigateTo($"/admin/{_descriptor.Slug}");
             return SaveOutcome.Succeeded;
